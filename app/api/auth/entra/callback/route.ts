@@ -81,12 +81,25 @@ export async function GET(request: NextRequest) {
     return loginRedirect('Could not retrieve your Microsoft profile.')
   }
 
-  // Look up user in DMS database
-  const user = await prisma.user.findUnique({ where: { email } })
+  // Look up or auto-provision user from Microsoft
+  let user = await prisma.user.findUnique({ where: { email } })
   if (!user) {
-    return loginRedirect(
-      `No DMS account found for ${email}. Contact your administrator.`
-    )
+    // First-time Microsoft login — create account with REVIEWER role
+    // Admin can promote to any role via the Admin panel
+    user = await prisma.user.create({
+      data: {
+        name,
+        email,
+        role: 'REVIEWER',
+        password: '', // no password — Microsoft SSO only
+      },
+    })
+    console.log('[entra] auto-provisioned new user:', email)
+  } else {
+    // Keep name in sync with Microsoft profile
+    if (user.name !== name) {
+      await prisma.user.update({ where: { id: user.id }, data: { name } })
+    }
   }
 
   // Issue the same session JWT the rest of the app uses
