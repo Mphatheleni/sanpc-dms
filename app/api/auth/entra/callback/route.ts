@@ -86,19 +86,26 @@ export async function GET(request: NextRequest) {
   if (!user) {
     // First-time Microsoft login — create account with REVIEWER role
     // Admin can promote to any role via the Admin panel
-    user = await prisma.user.create({
-      data: {
-        name,
-        email,
-        role: 'REVIEWER',
-        password: '', // no password — Microsoft SSO only
-      },
-    })
-    console.log('[entra] auto-provisioned new user:', email)
+    try {
+      user = await prisma.user.create({
+        data: {
+          name,
+          email,
+          role: 'REVIEWER',
+          password: '', // no password — Microsoft SSO only
+        },
+      })
+      console.log('[entra] auto-provisioned new user:', email, 'id:', user.id)
+    } catch (err) {
+      console.error('[entra] failed to create user:', email, err)
+      return loginRedirect('Your Microsoft account is not registered in the system. Please contact your administrator.')
+    }
   } else {
+    console.log('[entra] existing user logged in:', email, 'role:', user.role)
     // Keep name in sync with Microsoft profile
     if (user.name !== name) {
       await prisma.user.update({ where: { id: user.id }, data: { name } })
+      console.log('[entra] updated name for:', email)
     }
   }
 
