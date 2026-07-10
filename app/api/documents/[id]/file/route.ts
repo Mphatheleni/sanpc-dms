@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { getFilePath } from '@/lib/file'
 import { downloadFromSharePoint } from '@/lib/sharepoint'
+import { downloadFromGCS, isGCSConfigured } from '@/lib/gcs'
 import { readFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import path from 'path'
@@ -94,6 +95,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     } catch (err) {
       console.error('[file] SharePoint download failed:', err)
       return NextResponse.json({ error: 'Failed to retrieve file from SharePoint' }, { status: 502 })
+    }
+  } else if (isGCSConfigured()) {
+    try {
+      const { buffer: gcsBuffer } = await downloadFromGCS(document.fileUrl)
+      buffer = gcsBuffer
+    } catch (err) {
+      console.error('[file] GCS download failed:', err)
+      return NextResponse.json({ error: 'File not found in storage' }, { status: 404 })
     }
   } else {
     const filePath = getFilePath(document.fileUrl)
