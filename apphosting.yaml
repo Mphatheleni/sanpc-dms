@@ -1,34 +1,51 @@
+# Firebase App Hosting configuration
+# See https://firebase.google.com/docs/app-hosting/configure
+
 runConfig:
   minInstances: 0
-  maxInstances: 2
-  concurrency: 80
-  cpu: 1
-  memoryMiB: 512
 
 env:
+  # App URL — update to your deployed backend URL once known
   - variable: APP_URL
-    value: https://sanpc-dms.web.app
+    value: https://sanpc-dms--sanpc-dms.us-central1.hosted.app
+    availability:
+      - RUNTIME
 
-  - variable: DATABASE_URL
-    value: file:./prisma/dev.db
-
-  - variable: NODE_ENV
-    value: production
-
-  - variable: JWT_SECRET
-    secret: JWT_SECRET
-
+  # Azure AD
   - variable: AZURE_TENANT_ID
-    secret: AZURE_TENANT_ID
+    value: 5ed07a76-3277-4f9d-b22f-ac0be6003372
+    availability:
+      - RUNTIME
 
   - variable: AZURE_CLIENT_ID
-    secret: AZURE_CLIENT_ID
+    value: debfbbee-faa2-44fb-9231-582bf9130ca8
+    availability:
+      - RUNTIME
+
+  # Email sender address
+  - variable: MAIL_SENDER
+    value: mphatheleni.matidze@sa-npc.co.za
+    availability:
+      - RUNTIME
+
+  # Secrets (stored in Cloud Secret Manager via firebase apphosting:secrets:set)
+  - variable: JWT_SECRET
+    secret: JWT_SECRET
+    availability:
+      - RUNTIME
 
   - variable: AZURE_CLIENT_SECRET
     secret: AZURE_CLIENT_SECRET
-
-  - variable: MAIL_SENDER
-    secret: MAIL_SENDER
+    availability:
+      - RUNTIME
 
   - variable: MAIL_PASSWORD
     secret: MAIL_PASSWORD
+    availability:
+      - RUNTIME
+
+  - variable: DATABASE_URL
+    secret: DATABASE_URL
+    availability:
+      - BUILD
+      - RUNTIME
