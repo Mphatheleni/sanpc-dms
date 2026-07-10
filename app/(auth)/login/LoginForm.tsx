@@ -4,28 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 
-interface DemoUser {
-  email: string
-  name: string
-  role: string
-}
-
-const roleColors: Record<string, { dot: string; label: string }> = {
-  ADMIN:            { dot: '#EF4444', label: 'Admin' },
-  DOCUMENT_MANAGER: { dot: '#1C3557', label: 'Manager' },
-  REVIEWER:         { dot: '#7C3AED', label: 'Reviewer' },
-  APPROVER:         { dot: '#16A34A', label: 'Approver' },
-}
-
-const roleOrder = ['ADMIN', 'DOCUMENT_MANAGER', 'APPROVER', 'REVIEWER']
-
-export default function LoginForm({
-  demoUsers,
-  entraError,
-}: {
-  demoUsers: DemoUser[]
-  entraError?: string
-}) {
+export default function LoginForm({ entraError }: { entraError?: string }) {
   const router = useRouter()
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
@@ -53,12 +32,6 @@ export default function LoginForm({
     } finally {
       setLoading(false)
     }
-  }
-
-  const grouped: Record<string, DemoUser[]> = {}
-  for (const u of demoUsers) {
-    if (!grouped[u.role]) grouped[u.role] = []
-    grouped[u.role].push(u)
   }
 
   const displayError = error || entraError
@@ -189,50 +162,6 @@ export default function LoginForm({
               </button>
             </form>
 
-            {/* User list */}
-            {demoUsers.length > 0 && (
-              <div className="mt-6">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="flex-1 border-t border-gray-100" />
-                  <span className="text-[10px] font-semibold text-gray-400 tracking-widest uppercase whitespace-nowrap">
-                    Quick access
-                  </span>
-                  <div className="flex-1 border-t border-gray-100" />
-                </div>
-                <div className="space-y-1 max-h-52 overflow-y-auto">
-                  {roleOrder.filter((r) => grouped[r]).map((role) => (
-                    <div key={role}>
-                      <p className="text-[9px] font-bold uppercase tracking-[0.18em] px-1 py-1"
-                        style={{ color: roleColors[role]?.dot }}>
-                        {roleColors[role]?.label}
-                      </p>
-                      {grouped[role].map((u) => (
-                        <button
-                          key={u.email}
-                          type="button"
-                          onClick={() => { setEmail(u.email); setPassword('password') }}
-                          className="group w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 hover:bg-gray-50 transition-colors text-left border border-transparent hover:border-gray-100"
-                        >
-                          <div
-                            className="h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-                            style={{ backgroundColor: roleColors[role]?.dot }}
-                          >
-                            {u.name.charAt(0).toUpperCase()}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium text-gray-800 truncate leading-tight">{u.name}</p>
-                            <p className="text-[11px] text-gray-400 truncate leading-tight">{u.email}</p>
-                          </div>
-                          <svg className="h-3 w-3 text-gray-300 group-hover:text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                          </svg>
-                        </button>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
