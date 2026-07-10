@@ -237,23 +237,19 @@ export default function UserManagement({ initialUsers, currentUserId }: { initia
                       {roleLabels[user.role] ?? user.role}
                     </Badge>
                   ) : (
-                    <div className="relative inline-flex items-center gap-1">
+                    <div className="relative inline-flex items-center">
                       <select
                         value={user.role}
                         disabled={updatingRole === user.id}
                         onChange={(e) => handleRoleChange(user.id, e.target.value)}
-                        className="appearance-none rounded-full py-0.5 pl-2.5 pr-6 text-xs font-medium border-0 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-sanpc-navy cursor-pointer disabled:opacity-50"
-                        style={{
-                          backgroundColor: roleVariants[user.role] === 'danger' ? '#FEE2E2' :
-                            roleVariants[user.role] === 'info' ? '#E8EDF4' :
-                            roleVariants[user.role] === 'secondary' ? '#EDE9FE' :
-                            roleVariants[user.role] === 'success' ? '#DCFCE7' : '#F3F4F6',
-                          color: roleColors[user.role] ?? '#374151',
-                        }}
+                        className="appearance-none rounded-lg border border-gray-300 bg-white py-1.5 pl-3 pr-8 text-sm font-medium text-gray-700 shadow-sm hover:border-[#1C3557] focus:border-[#1C3557] focus:outline-none focus:ring-2 focus:ring-[#1C3557]/20 cursor-pointer disabled:opacity-50 transition-colors"
                       >
                         {ROLES.map((r) => <option key={r} value={r}>{roleLabels[r]}</option>)}
                       </select>
-                      <ChevronDown className="pointer-events-none absolute right-1.5 h-3 w-3 opacity-50" style={{ color: roleColors[user.role] }} />
+                      {updatingRole === user.id
+                        ? <svg className="pointer-events-none absolute right-2 h-3.5 w-3.5 animate-spin text-gray-400" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+                        : <ChevronDown className="pointer-events-none absolute right-2 h-3.5 w-3.5 text-gray-400" />
+                      }
                     </div>
                   )}
                 </td>
