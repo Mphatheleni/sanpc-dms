@@ -7,7 +7,7 @@ runConfig:
 env:
   # App URL — update to your deployed backend URL once known
   - variable: APP_URL
-    value: https://sanpc-dms--sanpc-dms.us-central1.hosted.app
+    value: https://sanpc-dms--sanpc-dms.us-east4.hosted.app
     availability:
       - RUNTIME
 
