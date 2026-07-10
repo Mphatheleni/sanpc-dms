@@ -219,25 +219,37 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* Document Type Summary */}
+      {/* Document Type Breakdown */}
       {nonZeroCategories.length > 0 && (
         <div className="rounded-xl border border-gray-100 bg-white shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-gray-800 flex items-center gap-2">
-              <FileText className="h-4 w-4 text-sanpc-navy" />
-              Documents by Type
-            </h2>
+            <div>
+              <h2 className="font-semibold text-gray-800 flex items-center gap-2">
+                <FileText className="h-4 w-4 text-[#1C3557]" />
+                Documents by Type
+              </h2>
+              <p className="text-xs text-gray-400 mt-0.5">Click a type to view only those documents</p>
+            </div>
+            <Link
+              href="/documents"
+              className="text-xs font-semibold text-[#1C3557] hover:underline flex items-center gap-1"
+            >
+              View all <ArrowRight className="h-3 w-3" />
+            </Link>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
             {nonZeroCategories.map(({ category, count }) => (
               <Link
                 key={category}
                 href={`/documents?category=${encodeURIComponent(category)}`}
-                className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm font-medium text-gray-700 hover:border-[#1C3557] hover:bg-[#E8EDF4] hover:text-[#1C3557] transition-all"
+                className="group flex flex-col rounded-xl border border-gray-100 bg-gray-50 p-4 hover:border-[#1C3557] hover:bg-[#E8EDF4] transition-all"
               >
-                {category}
-                <span className="inline-flex items-center justify-center rounded-full bg-[#1C3557] text-white text-[10px] font-bold h-4 min-w-[1rem] px-1">
-                  {count}
+                <span className="text-3xl font-bold text-[#1C3557] leading-none">{count}</span>
+                <span className="text-xs font-semibold text-gray-700 mt-2 leading-snug group-hover:text-[#1C3557]">
+                  {category}
+                </span>
+                <span className="text-[10px] text-gray-400 mt-2 flex items-center gap-0.5 group-hover:text-[#1C3557] transition-colors">
+                  View documents <ArrowRight className="h-2.5 w-2.5" />
                 </span>
               </Link>
             ))}

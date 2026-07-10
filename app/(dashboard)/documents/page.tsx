@@ -68,12 +68,31 @@ export default async function DocumentsPage({ searchParams }: PageProps) {
 
   const canCreate = session.role === 'DOCUMENT_MANAGER' || session.role === 'ADMIN'
 
+  // URL to clear just the category filter while keeping other params
+  const clearCategoryParams = new URLSearchParams()
+  if (search) clearCategoryParams.set('search', search)
+  if (status) clearCategoryParams.set('status', status)
+  const clearCategoryHref = `/documents${clearCategoryParams.toString() ? '?' + clearCategoryParams.toString() : ''}`
+
   return (
     <div className="space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Documents</h1>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center flex-wrap gap-2">
+            Documents
+            {category && (
+              <span className="inline-flex items-center gap-1 rounded-full px-3 py-0.5 text-sm font-semibold"
+                style={{ backgroundColor: '#E8EDF4', color: '#1C3557' }}>
+                {category}
+                <Link
+                  href={clearCategoryHref}
+                  className="ml-0.5 text-[#1C3557]/40 hover:text-[#1C3557] leading-none"
+                  title="Clear type filter"
+                >×</Link>
+              </span>
+            )}
+          </h1>
           <p className="text-sm text-gray-500 mt-0.5">
             {documents.length} document{documents.length !== 1 ? 's' : ''}
             {(search || status || category) ? ' matching filters' : ''}
