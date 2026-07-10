@@ -5,8 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Upload, Plus, Trash2, GripVertical, Wand2 } from 'lucide-react'
 import Button from '@/components/ui/Button'
 import { Input, Textarea } from '@/components/ui/Input'
-
-const MAX_WORKFLOW_MEMBERS = 8
+import UserPicker, { type PickableUser } from '@/components/ui/UserPicker'
 
 // SANPC document types per CSS/PR/CSF/005
 const SANPC_DOC_TYPES = [
@@ -88,6 +87,8 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
   const [originator, setOriginator] = useState('')
   const [authorisedBy, setAuthorisedBy] = useState('')
   const [purpose, setPurpose] = useState('')
+  const [originatorUser, setOriginatorUser] = useState<PickableUser | null>(null)
+  const [authorizerUser, setAuthorizerUser] = useState<PickableUser | null>(null)
 
   // Auto-suggest next sequential number when subject/type/unit are all filled
   useEffect(() => {
@@ -184,7 +185,6 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
     setList: React.Dispatch<React.SetStateAction<WorkflowMember[]>>,
     pool: UserOption[],
   ) {
-    if (list.length >= MAX_WORKFLOW_MEMBERS) return
     const user = pool.find((u) => u.id === userId)
     if (!user || list.find((m) => m.userId === userId)) return
     setList((prev) => [...prev, { userId, name: user.name, email: user.email, order: prev.length + 1 }])
@@ -240,9 +240,11 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
           documentNumber,
           documentTypeCode: docTypeCode || undefined,
           revision: revision || '00',
-          originator: originator || undefined,
-          authorisedBy: authorisedBy || undefined,
+          originator: originatorUser?.name || originator || undefined,
+          authorisedBy: authorizerUser?.name || authorisedBy || undefined,
           purpose: purpose || undefined,
+          originatorId: originatorUser?.id || undefined,
+          authorizerId: authorizerUser?.id || undefined,
         }),
       })
       if (res.ok) {
@@ -276,22 +278,20 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
     emptyText: string
   }) {
     const available = pool.filter((u) => !members.find((m) => m.userId === u.id))
-    const atMax = members.length >= MAX_WORKFLOW_MEMBERS
     return (
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <label className="block text-sm font-medium text-gray-700">{label}</label>
-          <span className="text-xs text-gray-400">{members.length}/{MAX_WORKFLOW_MEMBERS}</span>
+          <span className="text-xs text-gray-400">{members.length} added</span>
         </div>
         <p className="text-xs text-gray-400 mb-2">{sublabel}</p>
         <div className="mb-2">
           <select
-            className={`w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sanpc-navy focus:outline-none focus:ring-1 focus:ring-sanpc-navy ${atMax ? 'opacity-50 cursor-not-allowed' : ''}`}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sanpc-navy focus:outline-none focus:ring-1 focus:ring-sanpc-navy"
             onChange={(e) => { addMember(e.target.value, members, setList, pool); e.target.value = '' }}
             defaultValue=""
-            disabled={atMax}
           >
-            <option value="" disabled>{atMax ? `Maximum ${MAX_WORKFLOW_MEMBERS} reached` : `Add ${label.toLowerCase()}…`}</option>
+            <option value="" disabled>{`Add ${label.toLowerCase()}…`}</option>
             {available.map((u) => (
               <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
             ))}
@@ -498,18 +498,20 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
           </div>
 
           {/* People */}
-          <div className="grid grid-cols-2 gap-4">
-            <Input
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <UserPicker
+              users={users}
+              value={originatorUser}
+              onChange={(u) => { setOriginatorUser(u); if (u) setOriginator(u.name) }}
               label="Originator"
-              value={originator}
-              onChange={(e) => setOriginator(e.target.value)}
-              placeholder="Name, Position"
+              placeholder="Search by name or email…"
             />
-            <Input
+            <UserPicker
+              users={users}
+              value={authorizerUser}
+              onChange={(u) => { setAuthorizerUser(u); if (u) setAuthorisedBy(u.name) }}
               label="Authorised By"
-              value={authorisedBy}
-              onChange={(e) => setAuthorisedBy(e.target.value)}
-              placeholder="Name, Position"
+              placeholder="Search by name or email…"
             />
           </div>
 

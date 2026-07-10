@@ -4,6 +4,8 @@ import { prisma } from '@/lib/db'
 
 const docInclude = {
   uploadedBy: { select: { id: true, name: true, email: true, role: true } },
+  originatorUser: { select: { id: true, name: true, email: true, role: true } },
+  authorizerUser: { select: { id: true, name: true, email: true, role: true } },
   metadata: true,
   reviews: {
     include: { reviewer: { select: { id: true, name: true, email: true, role: true } } },
@@ -69,6 +71,7 @@ export async function POST(request: NextRequest) {
     sharePointUrl, sharePointItemId, reviewDeadlineDays,
     reviewers, approvers, metadata,
     documentNumber, documentTypeCode, revision, originator, authorisedBy, purpose,
+    originatorId, authorizerId,
   } = body
 
   // Calculate next review date from document type code per CSS/PR/CSF/005
@@ -120,6 +123,9 @@ export async function POST(request: NextRequest) {
       originator: originator ?? null,
       authorisedBy: authorisedBy ?? null,
       purpose: purpose ?? null,
+      originatorId: originatorId ?? null,
+      authorizerId: authorizerId ?? null,
+      status: 'REGISTERED' as never,
       nextReviewDate: nextReviewDateStr,
       uploadedById: session.userId,
       metadata: metadata?.length

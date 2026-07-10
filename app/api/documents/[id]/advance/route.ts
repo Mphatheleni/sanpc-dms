@@ -35,7 +35,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  if (document.status !== 'REVIEW_COMPLETE') {
+  if (document.status !== 'REVIEW_COMPLETE' && document.status !== 'UPDATING') {
     return NextResponse.json({ error: 'Document is not ready to advance to approval' }, { status: 400 })
   }
 
@@ -56,7 +56,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       }),
       prisma.document.update({
         where: { id },
-        data: { status: 'PENDING_APPROVAL' },
+        data: { status: 'FINAL_DRAFT' },
       }),
     ])
 

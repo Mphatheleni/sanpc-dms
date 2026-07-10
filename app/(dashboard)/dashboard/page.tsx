@@ -34,8 +34,8 @@ const roleColors: Record<string, { bg: string; text: string }> = {
 }
 
 const ALL_STATUSES: DocumentStatus[] = [
-  'DRAFT', 'PENDING_REVIEW', 'IN_REVIEW', 'REVIEW_COMPLETE',
-  'PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'CHANGES_REQUESTED',
+  'REGISTERED', 'DRAFT', 'PENDING_REVIEW', 'IN_REVIEW', 'UPDATING', 'REVIEW_COMPLETE',
+  'FINAL_DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'CHANGES_REQUESTED', 'CONTROLLED',
 ]
 
 export default async function DashboardPage() {
@@ -100,6 +100,21 @@ export default async function DashboardPage() {
       count: await prisma.document.count({ where: { ...scopeWhere, status } }),
     }))
   )
+
+  // Document type distribution
+  const docTypeCategories = [
+    'Policy', 'Procedure', 'Work Practice', 'Work Instruction',
+    'Strategy & Planning', 'Risk Matrix', 'Standard', 'Guidelines',
+    'Training Material', 'Form / Template',
+  ]
+  const categoryScope = session.role === 'ADMIN' ? {} : { uploadedById: session.userId }
+  const categoryCounts = await Promise.all(
+    docTypeCategories.map(async (cat) => ({
+      category: cat,
+      count: await prisma.document.count({ where: { ...categoryScope, category: cat } }),
+    }))
+  )
+  const nonZeroCategories = categoryCounts.filter((c) => c.count > 0)
 
   const roleStyle = roleColors[session.role] ?? { bg: '#F3F4F6', text: '#374151' }
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
@@ -203,6 +218,32 @@ export default async function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Document Type Summary */}
+      {nonZeroCategories.length > 0 && (
+        <div className="rounded-xl border border-gray-100 bg-white shadow-sm p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-semibold text-gray-800 flex items-center gap-2">
+              <FileText className="h-4 w-4 text-sanpc-navy" />
+              Documents by Type
+            </h2>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {nonZeroCategories.map(({ category, count }) => (
+              <Link
+                key={category}
+                href={`/documents?category=${encodeURIComponent(category)}`}
+                className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm font-medium text-gray-700 hover:border-[#1C3557] hover:bg-[#E8EDF4] hover:text-[#1C3557] transition-all"
+              >
+                {category}
+                <span className="inline-flex items-center justify-center rounded-full bg-[#1C3557] text-white text-[10px] font-bold h-4 min-w-[1rem] px-1">
+                  {count}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Recent Documents Table */}
       {myDocs.length > 0 && (

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Send, Loader2 } from 'lucide-react'
 import Button from '@/components/ui/Button'
-import { Textarea } from '@/components/ui/Input'
+import RichTextEditor, { RichTextDisplay } from '@/components/ui/RichTextEditor'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import type { DocumentComment } from '@/types'
 
@@ -20,23 +20,25 @@ interface CommentThreadProps {
 }
 
 export default function CommentThread({ documentId, comments, onCommentAdded }: CommentThreadProps) {
-  const [text, setText] = useState('')
+  const [html, setHtml] = useState('')
   const [loading, setLoading] = useState(false)
+
+  const isEmpty = !html || html === '' || html === '<br>' || html === '<p><br></p>' || html === '<div><br></div>'
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!text.trim()) return
+    if (isEmpty) return
     setLoading(true)
     try {
       const res = await fetch(`/api/documents/${documentId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: text.trim() }),
+        body: JSON.stringify({ content: html }),
       })
       if (res.ok) {
         const comment = await res.json()
         onCommentAdded(comment)
-        setText('')
+        setHtml('')
       }
     } finally {
       setLoading(false)
@@ -62,25 +64,26 @@ export default function CommentThread({ documentId, comments, onCommentAdded }: 
                 <span className="text-sm font-semibold text-gray-800">{c.author.name}</span>
                 <span className="text-xs text-muted-foreground">{formatDate(c.createdAt)}</span>
               </div>
-              <p className="text-sm text-gray-700 whitespace-pre-wrap">{c.content}</p>
+              <RichTextDisplay html={c.content} />
             </div>
           </div>
         )
       })}
-      <form onSubmit={submit} className="flex gap-2 pt-3 border-t border-gray-100">
-        <Textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Add a comment…"
-          rows={2}
-          className="flex-1 resize-none text-sm"
-        />
+      <form onSubmit={submit} className="flex gap-2 pt-3 border-t border-gray-100 items-end">
+        <div className="flex-1">
+          <RichTextEditor
+            value={html}
+            onChange={setHtml}
+            placeholder="Add a comment…"
+            rows={2}
+          />
+        </div>
         <Button
           type="submit"
           size="sm"
-          disabled={!text.trim() || loading}
+          disabled={isEmpty || loading}
           style={{ backgroundColor: '#1C3557', color: 'white' }}
-          className="self-end"
+          className="self-end mb-0.5"
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </Button>

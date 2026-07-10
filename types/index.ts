@@ -1,10 +1,13 @@
 export type Role = 'ADMIN' | 'DOCUMENT_MANAGER' | 'REVIEWER' | 'APPROVER'
 
 export type DocumentStatus =
+  | 'REGISTERED'
   | 'DRAFT'
   | 'PENDING_REVIEW'
   | 'IN_REVIEW'
+  | 'UPDATING'
   | 'REVIEW_COMPLETE'
+  | 'FINAL_DRAFT'
   | 'PENDING_APPROVAL'
   | 'APPROVED'
   | 'EXCO_PENDING'
@@ -125,6 +128,10 @@ export interface Document {
   isExcoRequired: boolean
   controlledAt: string | null
   amendmentCount: number
+  originatorId: string | null
+  originatorUser: User | null
+  authorizerId: string | null
+  authorizerUser: User | null
   uploadedById: string
   uploadedBy: User
   createdAt: string

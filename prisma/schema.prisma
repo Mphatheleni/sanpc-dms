@@ -14,10 +14,13 @@ enum Role {
 }
 
 enum DocumentStatus {
+  REGISTERED
   DRAFT
   PENDING_REVIEW
   IN_REVIEW
+  UPDATING
   REVIEW_COMPLETE
+  FINAL_DRAFT
   PENDING_APPROVAL
   APPROVED
   EXCO_PENDING
@@ -64,12 +67,14 @@ model User {
   departmentRole String?  // LEGAL | INTERNAL_AUDIT | QUALITY | PROCEDURES
   createdAt      DateTime @default(now())
 
-  uploadedDocuments Document[]         @relation("UploadedBy")
-  reviews           DocumentReview[]
-  comments          DocumentComment[]
-  versionUploads    DocumentVersion[]  @relation("VersionUploadedBy")
-  activities        DocumentActivity[] @relation("ActivityUser")
-  notifications     Notification[]
+  uploadedDocuments  Document[]         @relation("UploadedBy")
+  originatedDocuments Document[]        @relation("OriginatorOf")
+  authorizedDocuments Document[]        @relation("AuthorizerOf")
+  reviews            DocumentReview[]
+  comments           DocumentComment[]
+  versionUploads     DocumentVersion[]  @relation("VersionUploadedBy")
+  activities         DocumentActivity[] @relation("ActivityUser")
+  notifications      Notification[]
 }
 
 model Notification {
@@ -119,6 +124,11 @@ model Document {
   isExcoRequired    Boolean   @default(false)
   controlledAt      String?   // date first marked CONTROLLED
   amendmentCount    Int       @default(0)
+
+  originatorId  String?
+  originatorUser User?  @relation("OriginatorOf", fields: [originatorId], references: [id], onDelete: SetNull)
+  authorizerId  String?
+  authorizerUser User?  @relation("AuthorizerOf", fields: [authorizerId], references: [id], onDelete: SetNull)
 
   uploadedById String
   uploadedBy   User   @relation("UploadedBy", fields: [uploadedById], references: [id])

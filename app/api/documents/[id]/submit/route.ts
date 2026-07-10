@@ -31,7 +31,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  if (document.status !== 'DRAFT' && document.status !== 'CHANGES_REQUESTED' && document.status !== 'REJECTED') {
+  const submittableStatuses = ['REGISTERED', 'DRAFT', 'CHANGES_REQUESTED', 'REJECTED']
+  if (!submittableStatuses.includes(document.status)) {
     return NextResponse.json({ error: 'Document cannot be submitted in its current status' }, { status: 400 })
   }
 
@@ -46,7 +47,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   let newVersion = document.version
 
   // Snapshot current file as a version when resubmitting after changes or rejection
-  if (document.status === 'CHANGES_REQUESTED' || document.status === 'REJECTED') {
+  if (document.status === 'CHANGES_REQUESTED' || document.status === 'REJECTED' || document.status === 'UPDATING' || document.status === 'REVIEW_COMPLETE') {
     await prisma.documentVersion.create({
       data: {
         documentId: id,

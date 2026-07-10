@@ -3,11 +3,11 @@
 import { useState } from 'react'
 import Image from 'next/image'
 import {
-  CheckCircle, XCircle, AlertTriangle, ExternalLink, Loader2,
-  Send, MessageSquare, FileText, Clock, Info, Download,
+  CheckCircle, XCircle, AlertTriangle, Loader2,
+  Send, MessageSquare, FileText, Clock, Download,
 } from 'lucide-react'
 import Button from '@/components/ui/Button'
-import { Textarea } from '@/components/ui/Input'
+import RichTextEditor, { RichTextDisplay } from '@/components/ui/RichTextEditor'
 
 /* ── types ─────────────────────────────────────────────────────── */
 interface Comment {
@@ -56,15 +56,13 @@ function initials(name: string) {
 }
 
 /* ── document viewer (token-gated) ────────────────────────────── */
-function TokenDocumentViewer({ token, fileName, sharePointUrl }: {
+function TokenDocumentViewer({ token, fileName }: {
   token: string
   fileName: string
-  sharePointUrl: string | null
 }) {
   const [expanded, setExpanded] = useState(true)
   const ext = fileName.split('.').pop()?.toLowerCase() ?? ''
   const previewUrl = `/api/review-token/${token}/preview`
-  const downloadUrl = `/api/review-token/${token}/preview` // same route serves inline
 
   const isPdf    = ext === 'pdf'
   const isImage  = ['jpg','jpeg','png','gif','webp','svg'].includes(ext)
@@ -81,20 +79,12 @@ function TokenDocumentViewer({ token, fileName, sharePointUrl }: {
           <FileText className="h-4 w-4 text-gray-400" />
           <span className="text-sm font-semibold text-gray-700">Document</span>
           <span className="text-xs text-gray-400">{fileName}</span>
+          {/* DRAFT watermark badge */}
+          <span className="rounded border border-gray-300 px-1.5 py-0.5 text-[10px] font-bold tracking-widest text-gray-400 uppercase">
+            DRAFT
+          </span>
         </div>
         <div className="flex items-center gap-2">
-          {sharePointUrl && (
-            <a
-              href={sharePointUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-bold text-white transition-colors hover:opacity-90"
-              style={{ backgroundColor: '#0078D4' }}
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              Open in Office Online
-            </a>
-          )}
           <a
             href={previewUrl}
             download={fileName}
@@ -158,24 +148,26 @@ function TokenCommentThread({ token, initialComments }: {
   initialComments: Comment[]
 }) {
   const [comments, setComments] = useState(initialComments)
-  const [text, setText] = useState('')
+  const [html, setHtml] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  const isEmpty = !html || html === '' || html === '<br>' || html === '<p><br></p>' || html === '<div><br></div>'
+
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!text.trim()) return
+    if (isEmpty) return
     setLoading(true); setError('')
     try {
       const res = await fetch(`/api/review-token/${token}/comment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: text.trim() }),
+        body: JSON.stringify({ content: html }),
       })
       if (res.ok) {
         const comment = await res.json()
         setComments((prev) => [...prev, comment])
-        setText('')
+        setHtml('')
       } else {
         const d = await res.json().catch(() => ({}))
         setError(d.error || 'Failed to post comment')
@@ -203,22 +195,24 @@ function TokenCommentThread({ token, initialComments }: {
               <span className="text-xs font-semibold text-gray-800">{c.author.name}</span>
               <span className="text-[10px] text-gray-400">{formatDate(c.createdAt)}</span>
             </div>
-            <p className="text-sm text-gray-700 whitespace-pre-wrap">{c.content}</p>
+            <RichTextDisplay html={c.content} />
           </div>
         </div>
       ))}
-      <form onSubmit={submit} className="flex gap-2 pt-2 border-t border-gray-100">
-        <Textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Add a comment…"
-          rows={2}
-        />
+      <form onSubmit={submit} className="flex gap-2 items-end pt-2 border-t border-gray-100">
+        <div className="flex-1">
+          <RichTextEditor
+            value={html}
+            onChange={setHtml}
+            placeholder="Add a comment…"
+            rows={2}
+          />
+        </div>
         <Button
           type="submit"
-          disabled={!text.trim() || loading}
+          disabled={isEmpty || loading}
           style={{ backgroundColor: '#1C3557', color: 'white' }}
-          className="self-end"
+          className="self-end mb-0.5"
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </Button>
@@ -239,10 +233,19 @@ function DecisionPanel({
   const [loading, setLoading] = useState<string | null>(null)
   const [done, setDone] = useState<{ message: string; decision: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [validationError, setValidationError] = useState<string | null>(null)
 
   const appUrl = typeof window !== 'undefined' ? window.location.origin : ''
 
+  const isCommentEmpty = !comments || comments === '' || comments === '<br>' || comments === '<p><br></p>' || comments === '<div><br></div>'
+
   async function submit(decision: string) {
+    // Mandatory comment for reviewers
+    if (!isApprover && isCommentEmpty) {
+      setValidationError('Please add a review comment before submitting.')
+      return
+    }
+    setValidationError(null)
     setLoading(decision); setError(null)
     try {
       const res = await fetch(`/api/review-token/${token}`, {
@@ -273,7 +276,6 @@ function DecisionPanel({
         </div>
         <a href={`${appUrl}/documents/${documentId}`}>
           <Button style={{ backgroundColor: '#1C3557', color: 'white' }} className="gap-2 mt-2">
-            <ExternalLink className="h-4 w-4" />
             View in DMS
           </Button>
         </a>
@@ -300,23 +302,26 @@ function DecisionPanel({
         <p className="text-xs mt-0.5" style={{ color: isApprover ? '#B45309' : '#4A7AB5' }}>
           {isApprover
             ? 'Your decision is final. Approve to publish, or reject to return to the manager.'
-            : 'Review the document above, add any notes below, then mark complete.'}
+            : 'Review the document above, add your notes below (required), then mark complete.'}
         </p>
       </div>
       <div className="p-4 space-y-3">
-        <div className="space-y-1">
-          <label className="text-xs font-semibold text-gray-600">
-            {isApprover ? 'Approval notes (optional)' : 'Review notes (optional)'}
-          </label>
-          <Textarea
-            value={comments}
-            onChange={(e) => setComments(e.target.value)}
-            rows={3}
-            placeholder={isApprover
-              ? 'Reason for approval or rejection…'
-              : 'Summary of findings, issues noted, or notes for the manager…'}
-          />
-        </div>
+        <RichTextEditor
+          label={isApprover ? 'Approval notes (optional)' : 'Review notes (required)'}
+          value={comments}
+          onChange={setComments}
+          rows={3}
+          placeholder={isApprover
+            ? 'Reason for approval or rejection…'
+            : 'Summary of findings, issues noted, or notes for the manager…'}
+          required={!isApprover}
+        />
+        {validationError && (
+          <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2">
+            <AlertTriangle className="h-4 w-4 text-red-500 flex-shrink-0" />
+            <p className="text-sm text-red-700">{validationError}</p>
+          </div>
+        )}
         {error && (
           <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2">
             <AlertTriangle className="h-4 w-4 text-red-500 flex-shrink-0" />
@@ -373,7 +378,7 @@ function DecisionPanel({
 /* ── main ──────────────────────────────────────────────────────── */
 export default function ReviewExperience({
   token, documentId, documentTitle, documentDescription, fileName, fileSize,
-  category, sharePointUrl, uploaderName, reviewerName, reviewerEmail,
+  category, uploaderName, reviewerName, reviewerEmail,
   isApprover, alreadyDone, wrongStage, reviewStatus, deadlineLabel, overdue,
   initialComments, version,
 }: Props) {
@@ -391,18 +396,6 @@ export default function ReviewExperience({
             <div className="text-[9px] font-semibold tracking-[0.2em] uppercase" style={{ color: '#F5A623' }}>
               Powering Your Tomorrow
             </div>
-          </div>
-
-          <div className="h-5 w-px mx-2 bg-white/20 flex-shrink-0" />
-
-          {/* SharePoint branding */}
-          <div className="flex items-center gap-1.5">
-            <div className="grid grid-cols-3 gap-0.5 h-5 w-5 flex-shrink-0">
-              {Array.from({ length: 9 }).map((_, i) => (
-                <div key={i} className="rounded-[1px] bg-white/70" />
-              ))}
-            </div>
-            <span className="text-xs font-semibold text-white/80">SharePoint</span>
           </div>
 
           <div className="flex-1" />
@@ -439,18 +432,6 @@ export default function ReviewExperience({
               {overdue ? 'Overdue — ' : ''}{deadlineLabel}
             </span>
           )}
-          {sharePointUrl && (
-            <a
-              href={sharePointUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded px-3 py-1 text-xs font-bold text-white flex-shrink-0 hover:opacity-90"
-              style={{ backgroundColor: '#0078D4' }}
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              Open in Office Online
-            </a>
-          )}
         </div>
       </header>
 
@@ -459,39 +440,21 @@ export default function ReviewExperience({
 
         {/* Left: document viewer */}
         <main className="flex-1 overflow-y-auto p-4 lg:p-6 min-w-0">
-
-          {/* SharePoint info banner (when configured) */}
-          {sharePointUrl && (
-            <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3 flex items-start gap-2.5">
-              <Info className="h-4 w-4 text-blue-500 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-semibold text-blue-800">Collaborative editing available</p>
-                <p className="text-xs text-blue-600 mt-0.5">
-                  Open in Office Online to annotate using Word comments and Track Changes.
-                  All reviewers share the same document — your annotations are visible to everyone.
-                  Come back here to submit your formal decision.
-                </p>
-              </div>
+          {/* Document meta */}
+          <div className="mb-4 rounded-lg border border-gray-200 bg-white p-3 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg flex-shrink-0" style={{ backgroundColor: '#E8EDF4' }}>
+              <FileText className="h-5 w-5" style={{ color: '#1C3557' }} />
             </div>
-          )}
-
-          {/* Document meta (when no SharePoint) */}
-          {!sharePointUrl && (
-            <div className="mb-4 rounded-lg border border-gray-200 bg-white p-3 flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg flex-shrink-0" style={{ backgroundColor: '#E8EDF4' }}>
-                <FileText className="h-5 w-5" style={{ color: '#1C3557' }} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-gray-800 truncate">{fileName}</p>
-                <p className="text-xs text-gray-400">{formatBytes(fileSize)} · Uploaded by {uploaderName}</p>
-              </div>
-              <span className="text-xs text-amber-600 font-medium bg-amber-50 border border-amber-200 rounded px-2 py-1 flex-shrink-0">
-                SharePoint not configured — preview only
-              </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-gray-800 truncate">{fileName}</p>
+              <p className="text-xs text-gray-400">{formatBytes(fileSize)} · Uploaded by {uploaderName}</p>
             </div>
-          )}
+            <span className="text-xs font-bold border border-gray-300 rounded px-2 py-0.5 text-gray-400 tracking-widest uppercase flex-shrink-0">
+              DRAFT
+            </span>
+          </div>
 
-          <TokenDocumentViewer token={token} fileName={fileName} sharePointUrl={sharePointUrl} />
+          <TokenDocumentViewer token={token} fileName={fileName} />
         </main>
 
         {/* Right: actions + comments */}

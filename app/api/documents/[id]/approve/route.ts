@@ -29,7 +29,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   if (!document) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  if (document.status !== 'PENDING_APPROVAL') {
+  if (document.status !== 'PENDING_APPROVAL' && document.status !== 'FINAL_DRAFT') {
     return NextResponse.json({ error: 'Document is not pending approval' }, { status: 400 })
   }
 

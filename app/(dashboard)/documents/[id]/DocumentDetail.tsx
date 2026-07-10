@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowLeft, Download, FileText, User, Calendar, Tag, Layers,
-  CheckCircle, Clock, XCircle, AlertTriangle, ExternalLink, Users, UserCheck, X,
+  CheckCircle, Clock, XCircle, AlertTriangle, UserCheck, X,
   ShieldCheck, FileSignature, Landmark, Archive,
 } from 'lucide-react'
 import Card from '@/components/ui/Card'
@@ -185,18 +185,6 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
                         )}
                       </div>
                     </div>
-                    {isActive && doc.sharePointUrl && (
-                      <a
-                        href={doc.sharePointUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-2 inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold text-white transition-all hover:opacity-90"
-                        style={{ backgroundColor: '#0078D4' }}
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                        Open in Office Online
-                      </a>
-                    )}
                     {review.comments && <p className="mt-1 text-xs text-gray-500 italic">"{review.comments}"</p>}
                     {review.reviewedAt && <p className="text-xs text-gray-400 mt-0.5">{formatDate(review.reviewedAt)}</p>}
                   </div>
@@ -289,28 +277,6 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
           </div>
           <div className="flex items-center gap-3 flex-wrap">
             <StatusBadge status={doc.status} />
-            {doc.sharePointUrl && (
-              <a
-                href={doc.sharePointUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-semibold transition-colors"
-                style={{ backgroundColor: '#0078D4', color: '#fff' }}
-              >
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12.5 2C9.46 2 7 4.46 7 7.5c0 .95.25 1.84.68 2.61L3 14.5V20h5.5l4.32-4.32c.47.2.98.32 1.5.32 2.76 0 5-2.24 5-5S15.76 2 12.5 2zm0 8c-1.65 0-3-1.35-3-3s1.35-3 3-3 3 1.35 3 3-1.35 3-3 3z"/>
-                </svg>
-                Open &amp; Annotate
-              </a>
-            )}
-            <Link
-              href={`/documents/${doc.id}/collaborate`}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90"
-              style={{ backgroundColor: '#1C3557' }}
-            >
-              <Users className="h-4 w-4" />
-              Collaborative Review
-            </Link>
             <a
               href={`/api/documents/${doc.id}/file`}
               download={doc.fileName}

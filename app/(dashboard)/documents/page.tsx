@@ -43,15 +43,19 @@ export default async function DocumentsPage({ searchParams }: PageProps) {
   })
 
   const statuses: DocumentStatus[] = [
-    'DRAFT', 'IN_REVIEW', 'REVIEW_COMPLETE', 'PENDING_APPROVAL', 'APPROVED',
-    'EXCO_PENDING', 'CONTROLLED', 'SUPERSEDED', 'CANCELLED', 'REJECTED', 'CHANGES_REQUESTED', 'PENDING_REVIEW',
+    'REGISTERED', 'DRAFT', 'IN_REVIEW', 'UPDATING', 'REVIEW_COMPLETE', 'FINAL_DRAFT',
+    'PENDING_APPROVAL', 'APPROVED', 'EXCO_PENDING', 'CONTROLLED', 'SUPERSEDED',
+    'CANCELLED', 'REJECTED', 'CHANGES_REQUESTED', 'PENDING_REVIEW',
   ]
 
   const statusLabels: Record<DocumentStatus, string> = {
+    REGISTERED: 'Registered',
     DRAFT: 'Draft',
     PENDING_REVIEW: 'Pending Review',
     IN_REVIEW: 'RV — In Review',
+    UPDATING: 'RU — Updating',
     REVIEW_COMPLETE: 'RU — Request Update',
+    FINAL_DRAFT: 'FD — Final Draft',
     PENDING_APPROVAL: 'FD — Final Draft',
     APPROVED: 'AP — Approved',
     EXCO_PENDING: 'EXCO Pending',

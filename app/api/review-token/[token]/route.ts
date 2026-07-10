@@ -38,8 +38,8 @@ export async function POST(
 
   if (!document) return NextResponse.json({ error: 'Document not found' }, { status: 404 })
 
-  const expectedStatus = isApprover ? 'PENDING_APPROVAL' : 'IN_REVIEW'
-  if (document.status !== expectedStatus) {
+  const expectedStatus = isApprover ? ['PENDING_APPROVAL', 'FINAL_DRAFT'] : ['IN_REVIEW']
+  if (!expectedStatus.includes(document.status)) {
     return NextResponse.json(
       { error: 'This document is no longer awaiting your ' + (isApprover ? 'approval' : 'review') },
       { status: 409 }
@@ -89,7 +89,7 @@ export async function POST(
     if (pendingReviewers.length === 0) {
       await prisma.document.update({
         where: { id: documentId },
-        data: { status: 'REVIEW_COMPLETE' },
+        data: { status: 'UPDATING' },
       })
       sendOriginatorNotification({
         toEmail: document.uploadedBy.email,

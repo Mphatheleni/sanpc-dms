@@ -10,7 +10,6 @@ export default async function NewDocumentPage() {
   if (session.role !== 'DOCUMENT_MANAGER' && session.role !== 'ADMIN') redirect('/documents')
 
   const users = await prisma.user.findMany({
-    where: { role: { in: ['REVIEWER', 'APPROVER', 'ADMIN'] } },
     select: { id: true, name: true, email: true, role: true, departmentRole: true },
     orderBy: { name: 'asc' },
   })

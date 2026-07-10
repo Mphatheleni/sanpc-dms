@@ -16,25 +16,33 @@ interface ReportsData {
 }
 
 const STATUS_COLORS: Record<string, string> = {
+  REGISTERED: '#94A3B8',
   DRAFT: '#94A3B8',
   PENDING_REVIEW: '#F59E0B',
   IN_REVIEW: '#3B82F6',
+  UPDATING: '#8B5CF6',
   REVIEW_COMPLETE: '#8B5CF6',
+  FINAL_DRAFT: '#F97316',
   PENDING_APPROVAL: '#F97316',
   APPROVED: '#22C55E',
   REJECTED: '#EF4444',
   CHANGES_REQUESTED: '#EAB308',
+  CONTROLLED: '#16A34A',
 }
 
 const STATUS_LABELS: Record<string, string> = {
+  REGISTERED: 'Registered',
   DRAFT: 'Draft',
   PENDING_REVIEW: 'Pending Review',
-  IN_REVIEW: 'In Review',
+  IN_REVIEW: 'RV — In Review',
+  UPDATING: 'RU — Updating',
   REVIEW_COMPLETE: 'Review Complete',
+  FINAL_DRAFT: 'FD — Final Draft',
   PENDING_APPROVAL: 'Pending Approval',
-  APPROVED: 'Approved',
+  APPROVED: 'AP — Approved',
   REJECTED: 'Rejected',
   CHANGES_REQUESTED: 'Changes Req.',
+  CONTROLLED: 'Controlled',
 }
 
 export default function ReportsClient() {

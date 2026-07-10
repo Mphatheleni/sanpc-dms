@@ -80,7 +80,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       // All reviewers approved — return document to manager to clean up before approval
       await prisma.document.update({
         where: { id },
-        data: { status: 'REVIEW_COMPLETE' },
+        data: { status: 'UPDATING' },
       })
       // Notify document manager: all reviews done, ready to send for approval
       createNotification(

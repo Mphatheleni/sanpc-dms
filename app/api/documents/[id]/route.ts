@@ -5,6 +5,8 @@ import { createNotification } from '@/lib/notify'
 
 const docInclude = {
   uploadedBy: { select: { id: true, name: true, email: true, role: true } },
+  originatorUser: { select: { id: true, name: true, email: true, role: true } },
+  authorizerUser: { select: { id: true, name: true, email: true, role: true } },
   metadata: true,
   reviews: {
     include: { reviewer: { select: { id: true, name: true, email: true, role: true } } },

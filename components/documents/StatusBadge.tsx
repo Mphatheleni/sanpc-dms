@@ -5,10 +5,13 @@ const statusConfig: Record<
   DocumentStatus | ReviewStatus,
   { label: string; variant: 'default' | 'success' | 'warning' | 'danger' | 'info' | 'secondary' }
 > = {
+  REGISTERED: { label: 'Registered', variant: 'default' },
   DRAFT: { label: 'Draft', variant: 'default' },
   PENDING_REVIEW: { label: 'Pending Review', variant: 'warning' },
   IN_REVIEW: { label: 'RV — In Review', variant: 'info' },
+  UPDATING: { label: 'RU — Updating', variant: 'warning' },
   REVIEW_COMPLETE: { label: 'RU — Request Update', variant: 'warning' },
+  FINAL_DRAFT: { label: 'FD — Final Draft', variant: 'secondary' },
   PENDING_APPROVAL: { label: 'FD — Final Draft', variant: 'secondary' },
   APPROVED: { label: 'AP — Approved', variant: 'success' },
   REJECTED: { label: 'Rejected', variant: 'danger' },
