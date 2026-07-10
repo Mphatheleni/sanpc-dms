@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { calcDeadline } from '@/lib/sla'
 import { sendBulkReviewNotifications } from '@/lib/email'
 import { signReviewToken } from '@/lib/reviewToken'
+import { createNotification } from '@/lib/notify'
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession()
@@ -23,6 +24,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     },
   })
 
+  console.log(`[submit] id=${id} document=${document ? 'found' : 'NOT FOUND'}`)
   if (!document) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   if (document.uploadedById !== session.userId && session.role !== 'ADMIN') {
@@ -86,6 +88,17 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       data: { status: newDocStatus as never, version: newVersion },
     }),
   ])
+
+  // In-app notifications for all activated reviewers/approvers
+  groupToActivate.forEach((r) => {
+    createNotification(
+      r.reviewer.id,
+      'REVIEW_ASSIGNED',
+      `Review Assigned: ${document.title}`,
+      `${session.name} has assigned you to review "${document.title}".`,
+      id,
+    )
+  })
 
   // Fire-and-forget: email all activated reviewers/approvers with signed token links
   const appUrl = process.env.APP_URL || 'http://localhost:3000'

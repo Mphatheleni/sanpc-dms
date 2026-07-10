@@ -1,10 +1,17 @@
 'use client'
 
 import { useState } from 'react'
-import { Trash2, UserPlus, X, ChevronDown } from 'lucide-react'
+import { Trash2, UserPlus, ChevronDown } from 'lucide-react'
 import Card from '@/components/ui/Card'
 import Badge from '@/components/ui/Badge'
 import { Input } from '@/components/ui/Input'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
 
 interface User {
   id: string
@@ -44,7 +51,7 @@ const ROLES = ['ADMIN', 'DOCUMENT_MANAGER', 'REVIEWER', 'APPROVER'] as const
 
 export default function UserManagement({ initialUsers, currentUserId }: { initialUsers: User[]; currentUserId: string }) {
   const [users, setUsers] = useState(initialUsers)
-  const [showAddForm, setShowAddForm] = useState(false)
+  const [dialogOpen, setDialogOpen] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [updatingRole, setUpdatingRole] = useState<string | null>(null)
@@ -56,6 +63,10 @@ export default function UserManagement({ initialUsers, currentUserId }: { initia
   const [role, setRole] = useState<string>('REVIEWER')
   const [addError, setAddError] = useState('')
   const [adding, setAdding] = useState(false)
+
+  function resetForm() {
+    setName(''); setEmail(''); setPassword(''); setRole('REVIEWER'); setAddError('')
+  }
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
@@ -70,8 +81,8 @@ export default function UserManagement({ initialUsers, currentUserId }: { initia
       const data = await res.json()
       if (!res.ok) { setAddError(data.error || 'Failed to create user'); return }
       setUsers((prev) => [...prev, { ...data, docCount: 0 }])
-      setName(''); setEmail(''); setPassword(''); setRole('REVIEWER')
-      setShowAddForm(false)
+      resetForm()
+      setDialogOpen(false)
     } finally {
       setAdding(false)
     }
@@ -116,20 +127,22 @@ export default function UserManagement({ initialUsers, currentUserId }: { initia
           <p className="text-sm text-gray-500 mt-1">{users.length} registered users</p>
         </div>
         <button
-          onClick={() => { setShowAddForm((v) => !v); setAddError('') }}
+          onClick={() => { resetForm(); setDialogOpen(true) }}
           className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-all shadow-sm hover:shadow-md"
           style={{ backgroundColor: '#1C3557' }}
         >
-          {showAddForm ? <X className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
-          {showAddForm ? 'Cancel' : 'Add User'}
+          <UserPlus className="h-4 w-4" />
+          Add User
         </button>
       </div>
 
-      {/* Add User Form */}
-      {showAddForm && (
-        <Card>
-          <h2 className="font-semibold text-gray-800 mb-4">New User</h2>
-          <form onSubmit={handleAdd} className="grid gap-4 sm:grid-cols-2">
+      {/* Add User Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm() }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add New User</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleAdd} className="grid gap-4 sm:grid-cols-2 mt-2">
             <Input
               label="Full Name"
               value={name}
@@ -159,7 +172,7 @@ export default function UserManagement({ initialUsers, currentUserId }: { initia
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sanpc-navy focus:outline-none focus:ring-1 focus:ring-sanpc-navy"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sanpc-navy focus:outline-none focus:ring-1 focus:ring-sanpc-navy bg-white"
               >
                 {ROLES.map((r) => (
                   <option key={r} value={r}>{roleLabels[r]}</option>
@@ -171,19 +184,19 @@ export default function UserManagement({ initialUsers, currentUserId }: { initia
                 {addError}
               </p>
             )}
-            <div className="sm:col-span-2 flex justify-end">
+            <DialogFooter className="sm:col-span-2">
               <button
                 type="submit"
                 disabled={adding}
-                className="inline-flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-semibold text-white disabled:opacity-60 transition-all hover:opacity-90"
                 style={{ backgroundColor: '#1C3557' }}
               >
                 {adding ? 'Creating…' : 'Create User'}
               </button>
-            </div>
+            </DialogFooter>
           </form>
-        </Card>
-      )}
+        </DialogContent>
+      </Dialog>
 
       {/* Users Table */}
       <Card padding={false}>

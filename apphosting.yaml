@@ -1,0 +1,34 @@
+runConfig:
+  minInstances: 0
+  maxInstances: 2
+  concurrency: 80
+  cpu: 1
+  memoryMiB: 512
+
+env:
+  - variable: APP_URL
+    value: https://sanpc-dms.web.app
+
+  - variable: DATABASE_URL
+    value: file:./prisma/dev.db
+
+  - variable: NODE_ENV
+    value: production
+
+  - variable: JWT_SECRET
+    secret: JWT_SECRET
+
+  - variable: AZURE_TENANT_ID
+    secret: AZURE_TENANT_ID
+
+  - variable: AZURE_CLIENT_ID
+    secret: AZURE_CLIENT_ID
+
+  - variable: AZURE_CLIENT_SECRET
+    secret: AZURE_CLIENT_SECRET
+
+  - variable: MAIL_SENDER
+    secret: MAIL_SENDER
+
+  - variable: MAIL_PASSWORD
+    secret: MAIL_PASSWORD

@@ -7,6 +7,10 @@ export type DocumentStatus =
   | 'REVIEW_COMPLETE'
   | 'PENDING_APPROVAL'
   | 'APPROVED'
+  | 'EXCO_PENDING'
+  | 'CONTROLLED'
+  | 'SUPERSEDED'
+  | 'CANCELLED'
   | 'REJECTED'
   | 'CHANGES_REQUESTED'
 
@@ -28,6 +32,12 @@ export type ActivityAction =
   | 'APPROVED'
   | 'REJECTED'
   | 'COMMENT_ADDED'
+  | 'CONTROLLED'
+  | 'SUPERSEDED'
+  | 'CANCELLED'
+  | 'EXCO_SUBMITTED'
+  | 'SIGNED_PAGE_UPLOADED'
+  | 'AMENDED'
 
 export interface User {
   id: string
@@ -99,6 +109,22 @@ export interface Document {
   sharePointUrl: string | null
   sharePointItemId: string | null
   reviewDeadlineDays: number | null
+  documentNumber: string | null
+  revision: string | null
+  originalDate: string | null
+  authorisedBy: string | null
+  originator: string | null
+  purpose: string | null
+  documentTypeCode: string | null
+  nextReviewDate: string | null
+  retentionDate: string | null
+  signedPageUrl: string | null
+  signedPageName: string | null
+  excoResolutionUrl: string | null
+  excoResolutionName: string | null
+  isExcoRequired: boolean
+  controlledAt: string | null
+  amendmentCount: number
   uploadedById: string
   uploadedBy: User
   createdAt: string
@@ -108,6 +134,22 @@ export interface Document {
   comments: DocumentComment[]
   versions: DocumentVersion[]
   activities: DocumentActivity[]
+}
+
+export interface DocumentReview {
+  id: string
+  reviewerId: string
+  reviewer: User
+  order: number
+  isApprover: boolean
+  isMandatory: boolean
+  mandatoryRole: string | null
+  status: ReviewStatus
+  comments: string | null
+  reviewedAt: string | null
+  startedAt: string | null
+  deadline: string | null
+  reminderSentAt: string | null
 }
 
 export interface SessionUser {

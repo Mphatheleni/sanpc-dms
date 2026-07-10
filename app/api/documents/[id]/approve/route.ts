@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { sendOriginatorNotification } from '@/lib/email'
+import { createNotification } from '@/lib/notify'
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession()
@@ -67,6 +68,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         data: { status: 'APPROVED' },
       })
       // Notify originator: document is fully approved
+      createNotification(
+        document.uploadedBy.id,
+        'APPROVED',
+        `Document Approved: ${document.title}`,
+        `"${document.title}" has been fully approved by all approvers.`,
+        id,
+      )
       const appUrl = process.env.APP_URL || 'http://localhost:3000'
       sendOriginatorNotification({
         toEmail: document.uploadedBy.email,
@@ -96,6 +104,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }),
     ])
     // Notify originator: document rejected, back with them
+    createNotification(
+      document.uploadedBy.id,
+      'REJECTED',
+      `Document Rejected: ${document.title}`,
+      `"${document.title}" was rejected by ${session.name}.${comments ? ` Comment: ${comments}` : ''}`,
+      id,
+    )
     const appUrl = process.env.APP_URL || 'http://localhost:3000'
     sendOriginatorNotification({
       toEmail: document.uploadedBy.email,

@@ -1,11 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import {
-  CheckCircle, XCircle, RefreshCw, ExternalLink,
-  FileEdit, ClipboardCheck, AlertTriangle, Clock, Send,
+  CheckCircle, XCircle, ExternalLink,
+  FileEdit, ClipboardCheck, AlertTriangle, Clock, Send, ShieldCheck, Archive, Ban,
+  Upload, Landmark, FileSignature,
 } from 'lucide-react'
-// XCircle and RefreshCw used by approver buttons only
 import Button from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Input'
 import { getDeadlineLabel, isReviewOverdue } from '@/lib/sla'
@@ -21,6 +21,10 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
   const [comments, setComments] = useState('')
   const [loading, setLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [signFile, setSignFile] = useState<File | null>(null)
+  const [excoFile, setExcoFile] = useState<File | null>(null)
+  const signRef = useRef<HTMLInputElement>(null)
+  const excoRef = useRef<HTMLInputElement>(null)
 
   const isReviewerRole = session.role === 'REVIEWER' || session.role === 'ADMIN'
   const isApproverRole = session.role === 'APPROVER' || session.role === 'ADMIN'
@@ -39,11 +43,17 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
     isUploader &&
     (document.status === 'DRAFT' || document.status === 'CHANGES_REQUESTED' || document.status === 'REJECTED') &&
     document.reviews.length > 0
-  const canAdvance = isUploader && document.status === 'REVIEW_COMPLETE'
+  const canAdvance   = isUploader && document.status === 'REVIEW_COMPLETE'
+  const canControl   = (session.role === 'ADMIN' || isUploader) && document.status === 'APPROVED' && document.documentTypeCode !== 'PO' && !document.isExcoRequired
+  const canExco      = (session.role === 'ADMIN' || isUploader) && document.status === 'APPROVED' && (document.documentTypeCode === 'PO' || document.isExcoRequired)
+  const canExcoCtrl  = (session.role === 'ADMIN' || isUploader) && document.status === 'EXCO_PENDING'
+  const canSupersede = (session.role === 'ADMIN' || isUploader) && document.status === 'CONTROLLED'
+  const canCancel    = (session.role === 'ADMIN' || isUploader) && !['CANCELLED', 'SUPERSEDED'].includes(document.status)
+  const canSign      = (session.role === 'ADMIN' || isUploader) && ['APPROVED', 'EXCO_PENDING', 'CONTROLLED'].includes(document.status)
 
-  const activeEntry = myActiveReview ?? myActiveApproval
-  const deadline    = activeEntry?.deadline ?? null
-  const overdue     = isReviewOverdue(activeEntry?.startedAt ?? null, deadline)
+  const activeEntry   = myActiveReview ?? myActiveApproval
+  const deadline      = activeEntry?.deadline ?? null
+  const overdue       = isReviewOverdue(activeEntry?.startedAt ?? null, deadline)
   const deadlineLabel = getDeadlineLabel(deadline)
   const isApproverAction = canApprove && !canReview
 
@@ -91,7 +101,57 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
     } finally { setLoading(null) }
   }
 
-  // ── Review complete: back with doc manager ───────────────────────────────────
+  async function controlDocument(action: 'CONTROLLED' | 'SUPERSEDED' | 'CANCELLED') {
+    setLoading(action); setError(null)
+    try {
+      const res = await fetch(`/api/documents/${document.id}/control`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, comments }),
+      })
+      if (res.ok) { onUpdate(await res.json()); setComments('') }
+      else { const d = await res.json().catch(() => ({})); setError(d.error || `Error ${res.status}`) }
+    } finally { setLoading(null) }
+  }
+
+  async function submitForExco() {
+    setLoading('SUBMIT_EXCO'); setError(null)
+    try {
+      const res = await fetch(`/api/documents/${document.id}/exco`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'SUBMIT_EXCO' }),
+      })
+      if (res.ok) { onUpdate(await res.json()) }
+      else { const d = await res.json().catch(() => ({})); setError(d.error || `Error ${res.status}`) }
+    } finally { setLoading(null) }
+  }
+
+  async function uploadExcoResolution() {
+    if (!excoFile) return
+    setLoading('UPLOAD_RESOLUTION'); setError(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', excoFile)
+      const res = await fetch(`/api/documents/${document.id}/exco`, { method: 'POST', body: fd })
+      if (res.ok) { onUpdate(await res.json()); setExcoFile(null) }
+      else { const d = await res.json().catch(() => ({})); setError(d.error || `Error ${res.status}`) }
+    } finally { setLoading(null) }
+  }
+
+  async function uploadSignedPage() {
+    if (!signFile) return
+    setLoading('SIGN_UPLOAD'); setError(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', signFile)
+      const res = await fetch(`/api/documents/${document.id}/sign`, { method: 'POST', body: fd })
+      if (res.ok) { onUpdate(await res.json()); setSignFile(null) }
+      else { const d = await res.json().catch(() => ({})); setError(d.error || `Error ${res.status}`) }
+    } finally { setLoading(null) }
+  }
+
+  // ── Review complete: back with doc manager ────────────────────────────────
   if (canAdvance) {
     return (
       <div className="rounded-xl border-2 overflow-hidden" style={{ borderColor: '#1C3557' }}>
@@ -128,7 +188,7 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
     )
   }
 
-  // ── Document Manager: submit panel ──────────────────────────────────────────
+  // ── Document Manager: submit panel ───────────────────────────────────────
   if (canSubmit) {
     return (
       <div className="rounded-xl border-2 p-5 space-y-3" style={{ borderColor: '#F5A623', backgroundColor: '#FFFBEB' }}>
@@ -144,6 +204,7 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
             Update the document if needed, then resubmit to restart the review workflow.
           </p>
         )}
+        {error && <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{error}</div>}
         <Button onClick={submitForReview} loading={loading === 'submit'} className="mt-1">
           {document.status === 'DRAFT' ? 'Submit for Review' : 'Resubmit for Review'}
         </Button>
@@ -151,12 +212,220 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
     )
   }
 
+  // ── Policy: APPROVED → EXCO_PENDING ─────────────────────────────────────
+  if (canExco) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-xl border-2 overflow-hidden" style={{ borderColor: '#7C3AED' }}>
+          <div className="px-5 py-3 flex items-center gap-2" style={{ backgroundColor: '#7C3AED' }}>
+            <Landmark className="h-5 w-5 text-white" />
+            <span className="font-bold text-white text-sm">Policy Document — Board/EXCO Approval Required</span>
+          </div>
+          <div className="p-5 bg-white space-y-4">
+            <p className="text-sm text-gray-600">
+              This is a <strong>Policy (PO)</strong> document. Before it can be marked as Controlled,
+              it requires a <strong>Board / EXCO resolution</strong>. Submit it for EXCO first, then upload
+              the signed resolution once it is passed.
+            </p>
+            {document.signedPageUrl && (
+              <div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-700">
+                <CheckCircle className="h-4 w-4 flex-shrink-0" />
+                Signed page uploaded: <strong>{document.signedPageName}</strong>
+              </div>
+            )}
+            {error && <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{error}</div>}
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={submitForExco}
+                disabled={!!loading}
+                className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-bold text-white disabled:opacity-60 hover:opacity-90"
+                style={{ backgroundColor: '#7C3AED' }}
+              >
+                <Landmark className="h-4 w-4" />
+                {loading === 'SUBMIT_EXCO' ? 'Submitting…' : 'Submit for EXCO Approval'}
+              </button>
+              {canCancel && (
+                <button
+                  onClick={() => controlDocument('CANCELLED')}
+                  disabled={!!loading}
+                  className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-bold text-gray-700 border border-gray-300 hover:bg-gray-50 disabled:opacity-60"
+                >
+                  <Ban className="h-4 w-4 text-red-500" />
+                  {loading === 'CANCELLED' ? 'Cancelling…' : 'Cancel Document'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+        {canSign && <SignedPageUpload document={document} signFile={signFile} setSignFile={setSignFile} signRef={signRef} loading={loading} onUpload={uploadSignedPage} />}
+      </div>
+    )
+  }
+
+  // ── EXCO Pending: upload Board resolution → CONTROLLED ──────────────────
+  if (canExcoCtrl) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-xl border-2 overflow-hidden" style={{ borderColor: '#7C3AED' }}>
+          <div className="px-5 py-3 flex items-center gap-2" style={{ backgroundColor: '#7C3AED' }}>
+            <Landmark className="h-5 w-5 text-white" />
+            <span className="font-bold text-white text-sm">Awaiting EXCO/Board Resolution</span>
+          </div>
+          <div className="p-5 bg-white space-y-4">
+            <p className="text-sm text-gray-600">
+              Document is pending <strong>Board/EXCO approval</strong>. Once the resolution is passed,
+              upload the signed resolution document below to mark this document as <strong>Controlled</strong>.
+            </p>
+            {document.excoResolutionUrl && (
+              <div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-700">
+                <CheckCircle className="h-4 w-4 flex-shrink-0" />
+                Resolution already on file: <strong>{document.excoResolutionName}</strong>
+              </div>
+            )}
+            {error && <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{error}</div>}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Board/EXCO Resolution Document *</label>
+                <div
+                  className="flex items-center gap-3 rounded-lg border-2 border-dashed border-purple-200 bg-purple-50 px-4 py-3 cursor-pointer hover:border-purple-400 transition-colors"
+                  onClick={() => excoRef.current?.click()}
+                >
+                  <Upload className="h-5 w-5 text-purple-500 flex-shrink-0" />
+                  <span className="text-sm text-purple-700">
+                    {excoFile ? excoFile.name : 'Click to upload resolution (PDF or image)'}
+                  </span>
+                </div>
+                <input ref={excoRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={(e) => setExcoFile(e.target.files?.[0] ?? null)} />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={uploadExcoResolution}
+                  disabled={!excoFile || !!loading}
+                  className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-bold text-white disabled:opacity-60 hover:opacity-90"
+                  style={{ backgroundColor: excoFile ? '#7C3AED' : '#9CA3AF' }}
+                >
+                  <ShieldCheck className="h-4 w-4" />
+                  {loading === 'UPLOAD_RESOLUTION' ? 'Uploading & Controlling…' : 'Upload Resolution & Mark Controlled'}
+                </button>
+                {canCancel && (
+                  <button
+                    onClick={() => controlDocument('CANCELLED')}
+                    disabled={!!loading}
+                    className="inline-flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-bold text-gray-700 border border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-60"
+                  >
+                    <Ban className="h-4 w-4" />
+                    Cancel Document
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+        {canSign && <SignedPageUpload document={document} signFile={signFile} setSignFile={setSignFile} signRef={signRef} loading={loading} onUpload={uploadSignedPage} />}
+      </div>
+    )
+  }
+
+  // ── Mark as Controlled (after Approved, non-Policy) ──────────────────────
+  if (canControl) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-xl border-2 overflow-hidden" style={{ borderColor: '#16A34A' }}>
+          <div className="px-5 py-3 flex items-center gap-2 bg-green-700">
+            <ShieldCheck className="h-5 w-5 text-white" />
+            <span className="font-bold text-white text-sm">Document Approved — Mark as Controlled</span>
+          </div>
+          <div className="p-5 bg-white space-y-4">
+            <p className="text-sm text-gray-600">
+              This document has been <strong>formally approved</strong>. Once the signed authorisation page has been
+              scanned and attached (if required), mark it as <strong>Controlled</strong> to publish it as the official
+              version. A 40-year retention record will be created automatically.
+            </p>
+            {document.signedPageUrl && (
+              <div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-700">
+                <CheckCircle className="h-4 w-4 flex-shrink-0" />
+                Signed page uploaded: <strong>{document.signedPageName}</strong>
+              </div>
+            )}
+            {error && <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{error}</div>}
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => controlDocument('CONTROLLED')}
+                disabled={!!loading}
+                className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-bold text-white transition-all disabled:opacity-60 bg-green-700 hover:bg-green-800"
+              >
+                <ShieldCheck className="h-4 w-4" />
+                {loading === 'CONTROLLED' ? 'Marking…' : 'Mark as Controlled'}
+              </button>
+              {canCancel && (
+                <button
+                  onClick={() => controlDocument('CANCELLED')}
+                  disabled={!!loading}
+                  className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-bold text-gray-700 border border-gray-300 hover:bg-gray-50 transition-all disabled:opacity-60"
+                >
+                  <Ban className="h-4 w-4 text-red-500" />
+                  {loading === 'CANCELLED' ? 'Cancelling…' : 'Cancel Document'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+        {canSign && <SignedPageUpload document={document} signFile={signFile} setSignFile={setSignFile} signRef={signRef} loading={loading} onUpload={uploadSignedPage} />}
+      </div>
+    )
+  }
+
+  // ── Mark as Superseded (Controlled doc) ───────────────────────────────────
+  if (canSupersede) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-xl border-2 border-gray-300 overflow-hidden">
+          <div className="px-5 py-3 flex items-center gap-2 bg-gray-600">
+            <Archive className="h-5 w-5 text-white" />
+            <span className="font-bold text-white text-sm">Controlled Document — Lifecycle Actions</span>
+          </div>
+          <div className="p-5 bg-white space-y-4">
+            <p className="text-sm text-gray-600">
+              This is the current <strong>Controlled</strong> version. When a new revision is published,
+              mark this document as <strong>Superseded</strong>. Superseded documents are retained for
+              <strong> 40 years</strong> per the Records Retention Policy (CSS/PR/CSF/005 Section 19).
+            </p>
+            {document.retentionDate && (
+              <div className="rounded-md bg-gray-50 border border-gray-200 px-3 py-2 text-xs text-gray-500">
+                Retention date: <strong>{new Date(document.retentionDate).toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' })}</strong>
+              </div>
+            )}
+            {error && <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{error}</div>}
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => controlDocument('SUPERSEDED')}
+                disabled={!!loading}
+                className="inline-flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-bold text-gray-700 border border-gray-300 hover:bg-gray-50 transition-all disabled:opacity-60"
+              >
+                <Archive className="h-4 w-4" />
+                {loading === 'SUPERSEDED' ? 'Marking…' : 'Mark as Superseded'}
+              </button>
+              <button
+                onClick={() => controlDocument('CANCELLED')}
+                disabled={!!loading}
+                className="inline-flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-bold border border-red-200 text-red-700 hover:bg-red-50 transition-all disabled:opacity-60"
+              >
+                <Ban className="h-4 w-4" />
+                {loading === 'CANCELLED' ? 'Cancelling…' : 'Cancel Document'}
+              </button>
+            </div>
+          </div>
+        </div>
+        {canSign && <SignedPageUpload document={document} signFile={signFile} setSignFile={setSignFile} signRef={signRef} loading={loading} onUpload={uploadSignedPage} />}
+      </div>
+    )
+  }
+
   if (!canReview && !canApprove) return null
 
-  // ── Reviewer / Approver: two-step action panel ───────────────────────────────
+  // ── Reviewer / Approver: two-step action panel ────────────────────────────
   return (
     <div className="rounded-xl border-2 overflow-hidden" style={{ borderColor: '#1C3557' }}>
-
       {/* Header */}
       <div className="px-5 py-3 flex items-center justify-between" style={{ backgroundColor: '#1C3557' }}>
         <div className="flex items-center gap-2">
@@ -176,8 +445,7 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
       </div>
 
       <div className="p-5 space-y-5 bg-white">
-
-        {/* Step 1 — Open in SharePoint (shown when SharePoint URL exists) */}
+        {/* Step 1 — Open in SharePoint */}
         {document.sharePointUrl && (
           <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
             <div className="flex items-start gap-3">
@@ -186,7 +454,6 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
                 <p className="font-semibold text-gray-800 text-sm">Open &amp; annotate in Office Online</p>
                 <p className="text-xs text-gray-500 mt-0.5">
                   Read the document carefully. Use <strong>Word comments</strong> or <strong>Track Changes</strong> to annotate inline.
-                  All collaborators see your changes in real time.
                 </p>
                 <a
                   href={document.sharePointUrl}
@@ -225,11 +492,7 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
             </div>
           </div>
 
-          {error && (
-            <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
-              {error}
-            </div>
-          )}
+          {error && <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{error}</div>}
 
           <Textarea
             label="Decision comments"
@@ -243,7 +506,6 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
             }
           />
 
-          {/* Decision buttons */}
           <div>
             {canReview && (
               <div className="space-y-3">
@@ -291,7 +553,62 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
             )}
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
 
+// ── Signed Page Upload sub-panel ─────────────────────────────────────────────
+function SignedPageUpload({
+  document, signFile, setSignFile, signRef, loading, onUpload,
+}: {
+  document: Document
+  signFile: File | null
+  setSignFile: (f: File | null) => void
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  signRef: React.RefObject<any>
+  loading: string | null
+  onUpload: () => void
+}) {
+  return (
+    <div className="rounded-xl border border-gray-200 overflow-hidden">
+      <div className="px-4 py-2.5 bg-gray-50 flex items-center gap-2 border-b border-gray-200">
+        <FileSignature className="h-4 w-4 text-gray-500" />
+        <span className="text-sm font-semibold text-gray-700">Signed Authorisation Page</span>
+        {document.signedPageUrl && (
+          <span className="ml-auto text-xs text-green-600 font-medium">✓ On file: {document.signedPageName}</span>
+        )}
+      </div>
+      <div className="p-4 bg-white space-y-3">
+        <p className="text-xs text-gray-500">
+          Upload the physically signed authorisation page (scanned PDF or image). Required before marking as Controlled.
+        </p>
+        <div
+          className="flex items-center gap-3 rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 px-4 py-3 cursor-pointer hover:border-sanpc-navy transition-colors"
+          onClick={() => signRef.current?.click()}
+        >
+          <Upload className="h-4 w-4 text-gray-400 flex-shrink-0" />
+          <span className="text-sm text-gray-500">
+            {signFile ? signFile.name : 'Click to upload signed page (PDF/image)'}
+          </span>
+        </div>
+        <input
+          ref={signRef}
+          type="file"
+          accept=".pdf,.jpg,.jpeg,.png"
+          className="hidden"
+          onChange={(e) => setSignFile(e.target.files?.[0] ?? null)}
+        />
+        {signFile && (
+          <button
+            onClick={onUpload}
+            disabled={!!loading}
+            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white bg-green-700 hover:bg-green-800 disabled:opacity-60"
+          >
+            <Upload className="h-4 w-4" />
+            {loading === 'SIGN_UPLOAD' ? 'Uploading…' : 'Upload Signed Page'}
+          </button>
+        )}
       </div>
     </div>
   )

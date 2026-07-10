@@ -2,8 +2,8 @@ import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import Link from 'next/link'
 import { FilePlus, Search } from 'lucide-react'
-import DocumentCard from '@/components/documents/DocumentCard'
-import type { Document, DocumentStatus } from '@/types'
+import DocumentsClient from './DocumentsClient'
+import type { Document as DmsDocument, DocumentStatus } from '@/types'
 
 interface PageProps {
   searchParams: Promise<{ search?: string; status?: string; category?: string }>
@@ -43,24 +43,37 @@ export default async function DocumentsPage({ searchParams }: PageProps) {
   })
 
   const statuses: DocumentStatus[] = [
-    'DRAFT', 'PENDING_REVIEW', 'IN_REVIEW', 'REVIEW_COMPLETE', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'CHANGES_REQUESTED',
+    'DRAFT', 'IN_REVIEW', 'REVIEW_COMPLETE', 'PENDING_APPROVAL', 'APPROVED',
+    'EXCO_PENDING', 'CONTROLLED', 'SUPERSEDED', 'CANCELLED', 'REJECTED', 'CHANGES_REQUESTED', 'PENDING_REVIEW',
   ]
 
   const statusLabels: Record<DocumentStatus, string> = {
-    DRAFT: 'Draft', PENDING_REVIEW: 'Pending Review', IN_REVIEW: 'In Review',
-    REVIEW_COMPLETE: 'Review Complete',
-    PENDING_APPROVAL: 'Pending Approval', APPROVED: 'Approved', REJECTED: 'Rejected',
+    DRAFT: 'Draft',
+    PENDING_REVIEW: 'Pending Review',
+    IN_REVIEW: 'RV — In Review',
+    REVIEW_COMPLETE: 'RU — Request Update',
+    PENDING_APPROVAL: 'FD — Final Draft',
+    APPROVED: 'AP — Approved',
+    EXCO_PENDING: 'EXCO Pending',
+    REJECTED: 'Rejected',
     CHANGES_REQUESTED: 'Changes Requested',
+    CONTROLLED: 'Controlled',
+    SUPERSEDED: 'Superseded',
+    CANCELLED: 'Cancelled',
   }
 
   const canCreate = session.role === 'DOCUMENT_MANAGER' || session.role === 'ADMIN'
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Documents</h1>
-          <p className="text-sm text-gray-500 mt-1">{documents.length} document{documents.length !== 1 ? 's' : ''}</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {documents.length} document{documents.length !== 1 ? 's' : ''}
+            {(search || status || category) ? ' matching filters' : ''}
+          </p>
         </div>
         {canCreate && (
           <Link
@@ -75,74 +88,74 @@ export default async function DocumentsPage({ searchParams }: PageProps) {
       </div>
 
       {/* Filters */}
-      <form className="flex flex-wrap gap-3">
-        <div className="relative flex-1 min-w-48">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <input
-            name="search"
-            defaultValue={search}
-            placeholder="Search documents..."
-            className="w-full rounded-md border border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-sanpc-navy focus:outline-none focus:ring-1 focus:ring-sanpc-navy"
-          />
-        </div>
-        <select
-          name="status"
-          defaultValue={status}
-          className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sanpc-navy focus:outline-none focus:ring-1 focus:ring-sanpc-navy"
-        >
-          <option value="">All statuses</option>
-          {statuses.map((s) => <option key={s} value={s}>{statusLabels[s]}</option>)}
-        </select>
-        <select
-          name="category"
-          defaultValue={category}
-          className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sanpc-navy focus:outline-none focus:ring-1 focus:ring-sanpc-navy"
-        >
-          <option value="">All categories</option>
-          <option>POLICIES AND PROCEDURES</option>
-          <option>STANDARD OPERATING PROCEDURES</option>
-          <option>WORK INSTRUCTIONS</option>
-          <option>FORMS AND TEMPLATES</option>
-          <option>REPORTS</option>
-          <option>CONTRACTS AND AGREEMENTS</option>
-          <option>TECHNICAL DOCUMENTS</option>
-          <option>CORRESPONDENCE</option>
-          <option>OTHER</option>
-        </select>
-        <button
-          type="submit"
-          className="rounded-md bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
-        >
-          Filter
-        </button>
-        {(search || status || category) && (
-          <Link
-            href="/documents"
-            className="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
+      <div className="rounded-xl border border-gray-100 bg-white shadow-sm p-4">
+        <form className="flex flex-wrap gap-3">
+          <div className="relative flex-1 min-w-48">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              name="search"
+              defaultValue={search}
+              placeholder="Search documents…"
+              className="w-full rounded-lg border border-gray-200 pl-9 pr-3 py-2 text-sm focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all"
+            />
+          </div>
+          <select
+            name="status"
+            defaultValue={status}
+            className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all bg-white"
           >
-            Clear
-          </Link>
-        )}
-      </form>
-
-      {/* Document list */}
-      {documents.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">
-          <FilePlus className="h-12 w-12 mx-auto mb-3 opacity-30" />
-          <p className="font-medium">No documents found</p>
-          {canCreate && (
-            <Link href="/documents/new" className="mt-2 inline-block text-sm text-sanpc-navy hover:underline">
-              Upload your first document
+            <option value="">All statuses</option>
+            {statuses.map((s) => <option key={s} value={s}>{statusLabels[s]}</option>)}
+          </select>
+          <select
+            name="category"
+            defaultValue={category}
+            className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all bg-white"
+          >
+            <option value="">All document types</option>
+            <option>Policy</option>
+            <option>Procedure</option>
+            <option>Work Practice</option>
+            <option>Work Instruction</option>
+            <option>Strategy &amp; Planning</option>
+            <option>Risk Matrix</option>
+            <option>Standard</option>
+            <option>Guidelines</option>
+            <option>Training Material</option>
+            <option>Test Script</option>
+            <option>Process Flow</option>
+            <option>Form / Template</option>
+            <option>Corporate Governance</option>
+            <option>Internal Specification</option>
+            <option>Business Continuity Plan</option>
+            <option>Terms of Reference</option>
+            <option>Management System Manual</option>
+          </select>
+          <button
+            type="submit"
+            className="rounded-lg px-4 py-2 text-sm font-semibold text-white transition-all hover:opacity-90"
+            style={{ backgroundColor: '#1C3557' }}
+          >
+            Filter
+          </button>
+          {(search || status || category) && (
+            <Link
+              href="/documents"
+              className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+            >
+              Clear
             </Link>
           )}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {documents.map((doc) => (
-            <DocumentCard key={doc.id} doc={doc as unknown as Document} />
-          ))}
-        </div>
-      )}
+        </form>
+      </div>
+
+      {/* Document list */}
+      <DocumentsClient
+        documents={documents as unknown as DmsDocument[]}
+        canCreate={canCreate}
+        userId={session.userId}
+        userRole={session.role}
+      />
     </div>
   )
 }

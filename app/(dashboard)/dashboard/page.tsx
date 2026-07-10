@@ -1,8 +1,9 @@
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import Link from 'next/link'
-import { FileText, Clock, CheckCircle, AlertCircle, AlertTriangle } from 'lucide-react'
-import Card from '@/components/ui/Card'
+import { FileText, CheckCircle, AlertCircle, AlertTriangle, ArrowRight } from 'lucide-react'
+import StatsCard from '@/components/dashboard/StatsCard'
+import StatusChart from '@/components/dashboard/StatusChart'
 import StatusBadge from '@/components/documents/StatusBadge'
 import { REVIEW_SLA_HOURS } from '@/lib/sla'
 import type { DocumentStatus } from '@/types'
@@ -11,20 +12,46 @@ function formatDate(date: Date) {
   return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+function greetingByHour() {
+  const h = new Date().getHours()
+  if (h < 12) return 'Good morning'
+  if (h < 17) return 'Good afternoon'
+  return 'Good evening'
+}
+
+const roleLabels: Record<string, string> = {
+  ADMIN:            'Admin',
+  DOCUMENT_MANAGER: 'Manager',
+  REVIEWER:         'Reviewer',
+  APPROVER:         'Approver',
+}
+
+const roleColors: Record<string, { bg: string; text: string }> = {
+  ADMIN:            { bg: '#FEE2E2', text: '#991B1B' },
+  DOCUMENT_MANAGER: { bg: '#E8EDF4', text: '#1C3557' },
+  REVIEWER:         { bg: '#EDE9FE', text: '#5B21B6' },
+  APPROVER:         { bg: '#DCFCE7', text: '#166534' },
+}
+
+const ALL_STATUSES: DocumentStatus[] = [
+  'DRAFT', 'PENDING_REVIEW', 'IN_REVIEW', 'REVIEW_COMPLETE',
+  'PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'CHANGES_REQUESTED',
+]
+
 export default async function DashboardPage() {
   const session = await getSession()
   if (!session) return null
 
-  let myDocs: { id: string; title: string; status: DocumentStatus; updatedAt: Date }[] = []
+  let myDocs: { id: string; title: string; status: DocumentStatus; updatedAt: Date; category: string | null }[] = []
   let pendingAction: { id: string; title: string; status: DocumentStatus; updatedAt: Date }[] = []
 
   if (session.role === 'DOCUMENT_MANAGER' || session.role === 'ADMIN') {
     myDocs = await prisma.document.findMany({
       where: session.role === 'ADMIN' ? {} : { uploadedById: session.userId },
       orderBy: { updatedAt: 'desc' },
-      take: 10,
-      select: { id: true, title: true, status: true, updatedAt: true },
-    }) as { id: string; title: string; status: DocumentStatus; updatedAt: Date }[]
+      take: 8,
+      select: { id: true, title: true, status: true, updatedAt: true, category: true },
+    }) as typeof myDocs
   }
 
   if (session.role === 'REVIEWER' || session.role === 'ADMIN') {
@@ -36,7 +63,7 @@ export default async function DashboardPage() {
       orderBy: { updatedAt: 'desc' },
       take: 10,
       select: { id: true, title: true, status: true, updatedAt: true },
-    }) as { id: string; title: string; status: DocumentStatus; updatedAt: Date }[]
+    }) as typeof pendingAction
   }
 
   if (session.role === 'APPROVER' || session.role === 'ADMIN') {
@@ -48,17 +75,14 @@ export default async function DashboardPage() {
       orderBy: { updatedAt: 'desc' },
       take: 10,
       select: { id: true, title: true, status: true, updatedAt: true },
-    }) as { id: string; title: string; status: DocumentStatus; updatedAt: Date }[]
+    }) as typeof pendingAction
     pendingAction = [...pendingAction, ...approverDocs]
   }
 
   // Stats
-  const totalDocs = session.role === 'ADMIN'
-    ? await prisma.document.count()
-    : await prisma.document.count({ where: { uploadedById: session.userId } })
-  const approvedDocs = session.role === 'ADMIN'
-    ? await prisma.document.count({ where: { status: 'APPROVED' } })
-    : await prisma.document.count({ where: { uploadedById: session.userId, status: 'APPROVED' } })
+  const scopeWhere = session.role === 'ADMIN' ? {} : { uploadedById: session.userId }
+  const totalDocs = await prisma.document.count({ where: scopeWhere })
+  const approvedDocs = await prisma.document.count({ where: { ...scopeWhere, status: 'APPROVED' } })
 
   const slaDeadline = new Date(Date.now() - REVIEW_SLA_HOURS * 3600 * 1000)
   const overdueReviews = await prisma.documentReview.count({
@@ -69,120 +93,176 @@ export default async function DashboardPage() {
     },
   })
 
-  const stats = [
-    {
-      label: session.role === 'ADMIN' ? 'Total Documents' : 'My Documents',
-      value: totalDocs,
-      icon: FileText,
-      color: 'text-sanpc-navy bg-sanpc-navy-light',
-      alert: false,
-    },
-    {
-      label: 'Approved',
-      value: approvedDocs,
-      icon: CheckCircle,
-      color: 'text-green-600 bg-green-50',
-      alert: false,
-    },
-    {
-      label: 'Pending Action',
-      value: pendingAction.length,
-      icon: AlertCircle,
-      color: 'text-yellow-600 bg-yellow-50',
-      alert: false,
-    },
-    {
-      label: 'Overdue Reviews',
-      value: overdueReviews,
-      icon: AlertTriangle,
-      color: overdueReviews > 0 ? 'text-red-600 bg-red-50' : 'text-gray-400 bg-gray-100',
-      alert: overdueReviews > 0,
-    },
-  ]
+  // Status distribution for chart
+  const statusCounts = await Promise.all(
+    ALL_STATUSES.map(async (status) => ({
+      status,
+      count: await prisma.document.count({ where: { ...scopeWhere, status } }),
+    }))
+  )
+
+  const roleStyle = roleColors[session.role] ?? { bg: '#F3F4F6', text: '#374151' }
+  const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
 
   return (
     <div className="space-y-6">
-      {/* Welcome banner */}
+      {/* Welcome bar */}
       <div
         className="rounded-xl p-6 text-white relative overflow-hidden"
         style={{ background: 'linear-gradient(135deg, #1C3557 0%, #142840 100%)' }}
       >
         <div
-          className="absolute -top-8 -right-8 h-40 w-40 rounded-full opacity-10"
+          className="absolute -top-8 -right-8 h-48 w-48 rounded-full opacity-10"
           style={{ background: 'radial-gradient(circle, #F5A623, transparent)' }}
         />
-        <p className="text-white/60 text-sm font-medium uppercase tracking-widest mb-1" style={{ color: '#F5A623' }}>
-          SANPC Document Management
-        </p>
-        <h1 className="text-2xl font-bold text-white">Welcome back, {session.name}</h1>
-        <p className="text-white/60 text-sm mt-1">Here&apos;s an overview of your document activity.</p>
+        <div className="flex items-start justify-between flex-wrap gap-3">
+          <div>
+            <p className="text-sm font-medium mb-1" style={{ color: '#F5A623' }}>
+              {greetingByHour()}, {session.name.split(' ')[0]}
+            </p>
+            <h1 className="text-2xl font-bold text-white">SANPC Document Management</h1>
+            <p className="text-white/50 text-sm mt-1">{today}</p>
+          </div>
+          <span
+            className="rounded-full px-4 py-1.5 text-sm font-semibold flex-shrink-0"
+            style={{ backgroundColor: roleStyle.bg, color: roleStyle.text }}
+          >
+            {roleLabels[session.role] ?? session.role}
+          </span>
+        </div>
       </div>
 
-      {/* Stats */}
+      {/* KPI cards */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {stats.map(({ label, value, icon: Icon, color, alert }) => (
-          <Card key={label} className={`flex items-center gap-4 ${alert ? 'border-red-200 bg-red-50' : ''}`}>
-            <div className={`rounded-xl p-3 ${color}`}>
-              <Icon className="h-5 w-5" />
-            </div>
-            <div>
-              <p className={`text-2xl font-bold ${alert ? 'text-red-700' : 'text-gray-900'}`}>{value}</p>
-              <p className="text-xs text-gray-500">{label}</p>
-            </div>
-          </Card>
-        ))}
+        <StatsCard
+          icon={FileText}
+          label={session.role === 'ADMIN' ? 'Total Documents' : 'My Documents'}
+          value={totalDocs}
+        />
+        <StatsCard
+          icon={CheckCircle}
+          label="Approved"
+          value={approvedDocs}
+        />
+        <StatsCard
+          icon={AlertCircle}
+          label="Pending My Action"
+          value={pendingAction.length}
+        />
+        <StatsCard
+          icon={AlertTriangle}
+          label="Overdue Reviews"
+          value={overdueReviews}
+          alertColor={overdueReviews > 0}
+        />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      {/* Chart + Pending Actions */}
+      <div className="grid gap-6 lg:grid-cols-12">
+        {/* Status Chart */}
+        <div className="lg:col-span-5 rounded-xl border border-gray-100 bg-white shadow-sm p-5">
+          <h2 className="font-semibold text-gray-800 mb-4">Document Status Overview</h2>
+          <StatusChart data={statusCounts} />
+        </div>
+
         {/* Pending Actions */}
-        {pendingAction.length > 0 && (
-          <Card>
-            <h2 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 text-yellow-500" />
+        <div className="lg:col-span-7 rounded-xl border border-gray-100 bg-white shadow-sm p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-semibold text-gray-800 flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-amber-500" />
               Needs Your Attention
             </h2>
+            {pendingAction.length > 0 && (
+              <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
+                {pendingAction.length} item{pendingAction.length !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+          {pendingAction.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-40 text-gray-400">
+              <CheckCircle className="h-10 w-10 mb-2 opacity-30" />
+              <p className="text-sm">All caught up! No pending actions.</p>
+            </div>
+          ) : (
             <div className="space-y-2">
-              {pendingAction.map((doc) => (
+              {pendingAction.slice(0, 6).map((doc) => (
                 <Link key={doc.id} href={`/documents/${doc.id}`}>
-                  <div className="flex items-center justify-between rounded-lg border border-gray-100 p-3 hover:border-gray-200 hover:bg-gray-50 transition-all">
-                    <div>
-                      <p className="text-sm font-medium text-gray-800">{doc.title}</p>
+                  <div className="flex items-center justify-between rounded-lg border border-gray-100 p-3 hover:border-amber-200 hover:bg-amber-50/50 transition-all group">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-800 truncate">{doc.title}</p>
                       <p className="text-xs text-gray-400">{formatDate(doc.updatedAt)}</p>
                     </div>
-                    <StatusBadge status={doc.status} />
+                    <div className="flex items-center gap-2 ml-3 flex-shrink-0">
+                      <StatusBadge status={doc.status} />
+                      <ArrowRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-amber-500 transition-colors" />
+                    </div>
                   </div>
                 </Link>
               ))}
             </div>
-          </Card>
-        )}
+          )}
+        </div>
+      </div>
 
-        {/* Recent Documents */}
-        {myDocs.length > 0 && (
-          <Card>
-            <h2 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+      {/* Recent Documents Table */}
+      {myDocs.length > 0 && (
+        <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-800 flex items-center gap-2">
               <FileText className="h-4 w-4 text-sanpc-navy" />
               {session.role === 'ADMIN' ? 'Recent Documents' : 'My Recent Documents'}
             </h2>
-            <div className="space-y-2">
-              {myDocs.slice(0, 8).map((doc) => (
-                <Link key={doc.id} href={`/documents/${doc.id}`}>
-                  <div className="flex items-center justify-between rounded-lg border border-gray-100 p-3 hover:border-gray-200 hover:bg-gray-50 transition-all">
-                    <div>
-                      <p className="text-sm font-medium text-gray-800">{doc.title}</p>
-                      <p className="text-xs text-gray-400">{formatDate(doc.updatedAt)}</p>
-                    </div>
-                    <StatusBadge status={doc.status} />
-                  </div>
-                </Link>
-              ))}
-            </div>
-            <Link href="/documents" className="mt-3 block text-center text-xs font-semibold hover:underline" style={{ color: '#1C3557' }}>
-              View all documents →
+            <Link
+              href="/documents"
+              className="text-xs font-semibold hover:underline flex items-center gap-1"
+              style={{ color: '#1C3557' }}
+            >
+              View all <ArrowRight className="h-3 w-3" />
             </Link>
-          </Card>
-        )}
-      </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50/50">
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Document</th>
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden sm:table-cell">Category</th>
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Updated</th>
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="px-5 py-3" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {myDocs.map((doc) => (
+                  <tr key={doc.id} className="hover:bg-gray-50 transition-colors group">
+                    <td className="px-5 py-3.5">
+                      <p className="font-medium text-gray-800 truncate max-w-[200px]">{doc.title}</p>
+                    </td>
+                    <td className="px-5 py-3.5 hidden sm:table-cell">
+                      <span className="text-xs text-gray-500 truncate max-w-[120px] block">
+                        {doc.category ?? '—'}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5 hidden md:table-cell">
+                      <span className="text-xs text-gray-400">{formatDate(doc.updatedAt)}</span>
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <StatusBadge status={doc.status} />
+                    </td>
+                    <td className="px-5 py-3.5 text-right">
+                      <Link
+                        href={`/documents/${doc.id}`}
+                        className="text-xs font-medium text-gray-400 group-hover:text-sanpc-navy transition-colors"
+                      >
+                        View →
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

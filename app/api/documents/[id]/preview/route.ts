@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { getFilePath } from '@/lib/file'
+import { downloadFromSharePoint } from '@/lib/sharepoint'
 import { readFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import path from 'path'
@@ -14,7 +15,12 @@ function getExt(fileName: string): string {
   return path.extname(fileName).slice(1).toLowerCase()
 }
 
+function contentDisposition(fileName: string, type: 'inline' | 'attachment' = 'inline'): string {
+  return `${type}; filename*=UTF-8''${encodeURIComponent(fileName)}`
+}
+
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -22,20 +28,41 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const document = await prisma.document.findUnique({ where: { id } })
   if (!document) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const filePath = getFilePath(document.fileUrl)
-  if (!existsSync(filePath)) {
-    return NextResponse.json({ error: 'File not found on disk' }, { status: 404 })
-  }
-
   const ext = getExt(document.fileName)
-  const buffer = await readFile(filePath)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let buffer: any
+
+  // File is in SharePoint — fetch buffer from there
+  if (document.sharePointItemId) {
+    try {
+      const { body } = await downloadFromSharePoint(document.sharePointItemId)
+      const chunks: Uint8Array[] = []
+      const reader = (body as ReadableStream<Uint8Array>).getReader()
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        if (value) chunks.push(value)
+      }
+      buffer = Buffer.concat(chunks)
+    } catch (err) {
+      console.error('[preview] SharePoint download failed:', err)
+      return NextResponse.json({ error: 'Failed to retrieve file from SharePoint' }, { status: 502 })
+    }
+  } else {
+    // Local disk fallback
+    const filePath = getFilePath(document.fileUrl)
+    if (!existsSync(filePath)) {
+      return NextResponse.json({ error: 'File not found on disk' }, { status: 404 })
+    }
+    buffer = await readFile(filePath)
+  }
 
   // PDF — browsers render natively
   if (ext === 'pdf') {
     return new NextResponse(buffer, {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `inline; filename="${document.fileName}"`,
+        'Content-Disposition': contentDisposition(document.fileName),
       },
     })
   }
@@ -109,4 +136,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     previewable: false,
     message: `Preview is not available for .${ext} files. Please download to view.`,
   })
+  } catch (err) {
+    console.error('[preview] Unhandled error:', err)
+    return NextResponse.json({ error: 'Preview failed', details: String(err) }, { status: 500 })
+  }
 }

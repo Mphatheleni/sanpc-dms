@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { ChevronDown, ChevronUp, Download, Eye, EyeOff, FileX } from 'lucide-react'
-import Button from '@/components/ui/Button'
 import path from 'path'
 
 interface DocumentViewerProps {

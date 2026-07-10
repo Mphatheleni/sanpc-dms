@@ -96,7 +96,18 @@ export async function POST(
         toName: document.uploadedBy.name,
         documentTitle: document.title,
         documentUrl: `${appUrl}/documents/${documentId}`,
-        outcome: 'REVIEW_COMPLETE' as never,
+        outcome: 'REVIEW_COMPLETE',
+        reviewerName,
+        reviewerComments: comments || null,
+      }).catch(() => {})
+    } else {
+      // Notify doc manager that this specific reviewer has submitted
+      sendOriginatorNotification({
+        toEmail: document.uploadedBy.email,
+        toName: document.uploadedBy.name,
+        documentTitle: document.title,
+        documentUrl: `${appUrl}/documents/${documentId}`,
+        outcome: 'REVIEWER_COMPLETE',
         reviewerName,
         reviewerComments: comments || null,
       }).catch(() => {})

@@ -44,5 +44,18 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
     name: session.name,
   }
 
-  return <DocumentDetail initialDoc={document as unknown as Document} session={sessionUser} />
+  // Fetch users for reviewer replacement (admins/managers can replace reviewers mid-review)
+  const users = await prisma.user.findMany({
+    where: { role: { in: ['REVIEWER', 'APPROVER', 'ADMIN', 'DOCUMENT_MANAGER'] } },
+    select: { id: true, name: true, email: true, role: true },
+    orderBy: { name: 'asc' },
+  })
+
+  return (
+    <DocumentDetail
+      initialDoc={document as unknown as Document}
+      session={sessionUser}
+      users={users as { id: string; name: string; email: string; role: string }[]}
+    />
+  )
 }

@@ -1,17 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import { Send } from 'lucide-react'
+import { Send, Loader2 } from 'lucide-react'
 import Button from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Input'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import type { DocumentComment } from '@/types'
 
 function formatDate(date: string) {
-  return new Date(date).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
+  return new Date(date).toLocaleString('en-GB', {
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
   })
 }
 
@@ -48,32 +46,43 @@ export default function CommentThread({ documentId, comments, onCommentAdded }: 
   return (
     <div className="space-y-4">
       {comments.length === 0 && (
-        <p className="text-sm text-gray-400">No comments yet.</p>
+        <p className="text-sm text-muted-foreground py-2">No comments yet. Be the first to comment.</p>
       )}
-      {comments.map((c) => (
-        <div key={c.id} className="flex gap-3">
-          <div className="flex-shrink-0 h-8 w-8 rounded-full bg-sanpc-navy-light flex items-center justify-center text-sanpc-navy text-xs font-semibold">
-            {c.author.name.charAt(0).toUpperCase()}
-          </div>
-          <div className="flex-1">
-            <div className="flex items-baseline gap-2 mb-1">
-              <span className="text-sm font-medium text-gray-800">{c.author.name}</span>
-              <span className="text-xs text-gray-400">{formatDate(c.createdAt)}</span>
+      {comments.map((c) => {
+        const initials = c.author.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+        return (
+          <div key={c.id} className="flex gap-3">
+            <Avatar className="h-7 w-7 flex-shrink-0">
+              <AvatarFallback className="text-xs font-semibold text-white" style={{ backgroundColor: '#1C3557' }}>
+                {initials}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex-1">
+              <div className="flex items-baseline gap-2 mb-0.5">
+                <span className="text-sm font-semibold text-gray-800">{c.author.name}</span>
+                <span className="text-xs text-muted-foreground">{formatDate(c.createdAt)}</span>
+              </div>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{c.content}</p>
             </div>
-            <p className="text-sm text-gray-700 whitespace-pre-wrap">{c.content}</p>
           </div>
-        </div>
-      ))}
-      <form onSubmit={submit} className="flex gap-2 pt-2 border-t border-gray-100">
+        )
+      })}
+      <form onSubmit={submit} className="flex gap-2 pt-3 border-t border-gray-100">
         <Textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Add a comment..."
+          placeholder="Add a comment…"
           rows={2}
-          className="flex-1"
+          className="flex-1 resize-none text-sm"
         />
-        <Button type="submit" loading={loading} disabled={!text.trim()} size="sm">
-          <Send className="h-4 w-4" />
+        <Button
+          type="submit"
+          size="sm"
+          disabled={!text.trim() || loading}
+          style={{ backgroundColor: '#1C3557', color: 'white' }}
+          className="self-end"
+        >
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </Button>
       </form>
     </div>

@@ -1,12 +1,9 @@
 import {
   Eye, Upload, CheckCircle, XCircle, RefreshCw,
-  MessageSquare, FilePlus, Download, ThumbsUp, ThumbsDown,
+  MessageSquare, FilePlus, Download, ThumbsUp, ThumbsDown, ShieldCheck, Archive, Ban,
+  Landmark, FileSignature, PenLine,
 } from 'lucide-react'
-
-type ActivityAction =
-  | 'CREATED' | 'VIEWED' | 'DOWNLOADED' | 'SUBMITTED'
-  | 'REVIEW_APPROVED' | 'REVIEW_REJECTED' | 'REVIEW_CHANGES_REQUESTED'
-  | 'APPROVED' | 'REJECTED' | 'COMMENT_ADDED'
+import type { ActivityAction } from '@/types'
 
 interface ActivityEntry {
   id: string
@@ -16,7 +13,7 @@ interface ActivityEntry {
   user: { name: string; email: string }
 }
 
-const actionConfig: Record<ActivityAction, { label: string; icon: React.ElementType; color: string }> = {
+const actionConfig: Partial<Record<ActivityAction, { label: string; icon: React.ElementType; color: string }>> = {
   CREATED:                   { label: 'Uploaded document',        icon: FilePlus,    color: 'text-sanpc-navy bg-sanpc-navy-light' },
   VIEWED:                    { label: 'Viewed document',          icon: Eye,         color: 'text-gray-400 bg-gray-100' },
   DOWNLOADED:                { label: 'Downloaded document',      icon: Download,    color: 'text-gray-500 bg-gray-100' },
@@ -27,6 +24,12 @@ const actionConfig: Record<ActivityAction, { label: string; icon: React.ElementT
   APPROVED:                  { label: 'Finally approved',         icon: ThumbsUp,    color: 'text-green-600 bg-green-100' },
   REJECTED:                  { label: 'Finally rejected',         icon: ThumbsDown,  color: 'text-red-600 bg-red-100' },
   COMMENT_ADDED:             { label: 'Added a comment',          icon: MessageSquare, color: 'text-sanpc-navy bg-sanpc-navy-light' },
+  CONTROLLED:                { label: 'Marked as Controlled',     icon: ShieldCheck,    color: 'text-green-700 bg-green-100' },
+  SUPERSEDED:                { label: 'Marked as Superseded',     icon: Archive,        color: 'text-gray-500 bg-gray-100' },
+  CANCELLED:                 { label: 'Cancelled document',       icon: Ban,            color: 'text-red-500 bg-red-50' },
+  EXCO_SUBMITTED:            { label: 'Submitted for EXCO',       icon: Landmark,       color: 'text-purple-600 bg-purple-50' },
+  SIGNED_PAGE_UPLOADED:      { label: 'Uploaded signed page',     icon: FileSignature,  color: 'text-green-600 bg-green-50' },
+  AMENDED:                   { label: 'Document amended',         icon: PenLine,        color: 'text-blue-600 bg-blue-50' },
 }
 
 function timeAgo(date: string): string {

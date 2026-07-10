@@ -1,14 +1,15 @@
-import { HTMLAttributes } from 'react'
+import * as React from 'react'
 
-interface CardProps extends HTMLAttributes<HTMLDivElement> {
-  padding?: boolean
+interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
+  padding?: boolean | number
 }
 
-export default function Card({ children, className = '', padding = true, ...props }: CardProps) {
+export default function Card({ className = '', padding = true, children, ...props }: CardProps) {
+  const paddingClass = padding === false ? '' : 'p-5'
   return (
     <div
+      className={`rounded-xl border border-gray-200 bg-white shadow-sm ${paddingClass} ${className}`}
       {...props}
-      className={`rounded-xl border border-gray-200 bg-white shadow-sm ${padding ? 'p-6' : ''} ${className}`}
     >
       {children}
     </div>

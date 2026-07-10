@@ -71,6 +71,7 @@ export async function uploadToSharePoint(
       body: buffer as unknown as BodyInit,
     })
     const item = await res.json()
+    if (!res.ok) throw new Error(`SharePoint upload failed (${res.status}): ${JSON.stringify(item)}`)
     return {
       itemId: item.id,
       webUrl: item.webUrl,

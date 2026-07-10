@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { calcDeadline } from '@/lib/sla'
 import { sendBulkReviewNotifications } from '@/lib/email'
 import { signReviewToken } from '@/lib/reviewToken'
+import { createNotification } from '@/lib/notify'
 
 /**
  * POST /api/documents/[id]/advance
@@ -58,6 +59,17 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
         data: { status: 'PENDING_APPROVAL' },
       }),
     ])
+
+    // In-app notifications for all approvers
+    approverReviews.forEach((r) => {
+      createNotification(
+        r.reviewer.id,
+        'REVIEW_ASSIGNED',
+        `Approval Assigned: ${document.title}`,
+        `${document.uploadedBy.name} requires your approval for "${document.title}".`,
+        id,
+      )
+    })
 
     // Notify all approvers with signed token links
     const appUrl = process.env.APP_URL || 'http://localhost:3000'

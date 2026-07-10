@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { saveFile } from '@/lib/file'
-import { isSharePointConfigured, uploadToSharePoint } from '@/lib/sharepoint'
+import { uploadToSharePoint, isSharePointConfigured } from '@/lib/sharepoint'
 import { randomUUID } from 'crypto'
 import path from 'path'
 
@@ -13,31 +13,36 @@ export async function POST(request: NextRequest) {
   const file = formData.get('file') as File | null
   if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 })
 
+  const buffer = Buffer.from(await file.arrayBuffer())
+  const ext = path.extname(file.name)
+  const uniqueName = `${randomUUID()}${ext}`
+
+  // SharePoint via Graph API
   if (isSharePointConfigured()) {
     try {
-      const buffer = Buffer.from(await file.arrayBuffer())
-      const ext = path.extname(file.name)
-      const uniqueName = `${randomUUID()}${ext}`
       const result = await uploadToSharePoint(uniqueName, buffer, file.type || 'application/octet-stream')
-      return NextResponse.json({
-        storedName: result.itemId,       // itemId used as storedName for SharePoint files
-        fileName: file.name,
-        fileType: file.type,
-        fileSize: file.size,
-        sharePointUrl: result.webUrl,
-        sharePointItemId: result.itemId,
-      })
+      if (result.itemId && result.webUrl) {
+        console.log(`[upload] SharePoint upload success: ${result.webUrl}`)
+        return NextResponse.json({
+          storedName: result.itemId,
+          fileName: file.name,
+          fileType: file.type || 'application/octet-stream',
+          fileSize: file.size,
+          sharePointUrl: result.webUrl,
+          sharePointItemId: result.itemId,
+        })
+      }
     } catch (err) {
-      console.error('[upload] SharePoint upload failed, falling back to local:', err)
+      console.error('[upload] SharePoint upload error, falling back to local:', err)
     }
   }
 
   // Local storage fallback
-  const { storedName, size } = await saveFile(file)
+  const { storedName, size } = await saveFile(uniqueName, buffer)
   return NextResponse.json({
     storedName,
     fileName: file.name,
-    fileType: file.type,
+    fileType: file.type || 'application/octet-stream',
     fileSize: size,
     sharePointUrl: null,
     sharePointItemId: null,

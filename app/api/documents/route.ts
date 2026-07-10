@@ -68,10 +68,21 @@ export async function POST(request: NextRequest) {
     storedName, fileName, fileType, fileSize,
     sharePointUrl, sharePointItemId, reviewDeadlineDays,
     reviewers, approvers, metadata,
+    documentNumber, documentTypeCode, revision, originator, authorisedBy, purpose,
   } = body
 
+  // Calculate next review date from document type code per CSS/PR/CSF/005
+  const reviewYears: Record<string, number> = {
+    ST: 1, RM: 2, TOR: 2, GL: 3, BC: 3,
+  }
+  const yearsUntilReview = documentTypeCode ? (reviewYears[documentTypeCode] ?? 6) : 6
+  const nextReviewDate = new Date()
+  nextReviewDate.setFullYear(nextReviewDate.getFullYear() + yearsUntilReview)
+  const nextReviewDateStr = nextReviewDate.toISOString().split('T')[0]
+
   if (!title || !storedName || !fileName) {
-    return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    const missing = [!title && 'title', !storedName && 'storedName', !fileName && 'fileName'].filter(Boolean)
+    return NextResponse.json({ error: `Missing required fields: ${missing.join(', ')}` }, { status: 400 })
   }
 
   // Build all review records: reviewers first (isApprover=false), then approvers (isApprover=true)
@@ -103,6 +114,13 @@ export async function POST(request: NextRequest) {
       sharePointUrl: sharePointUrl ?? null,
       sharePointItemId: sharePointItemId ?? null,
       reviewDeadlineDays: reviewDeadlineDays ? Number(reviewDeadlineDays) : null,
+      documentNumber: documentNumber ?? null,
+      documentTypeCode: documentTypeCode ?? null,
+      revision: revision ?? '00',
+      originator: originator ?? null,
+      authorisedBy: authorisedBy ?? null,
+      purpose: purpose ?? null,
+      nextReviewDate: nextReviewDateStr,
       uploadedById: session.userId,
       metadata: metadata?.length
         ? { create: metadata.map((m: { key: string; value: string }) => ({ key: m.key, value: m.value })) }

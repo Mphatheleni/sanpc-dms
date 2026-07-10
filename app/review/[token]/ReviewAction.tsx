@@ -1,7 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { CheckCircle, XCircle, ExternalLink, Send } from 'lucide-react'
+import { CheckCircle, XCircle, ExternalLink, Loader2, AlertTriangle } from 'lucide-react'
+import Button from '@/components/ui/Button'
+import { Textarea } from '@/components/ui/Input'
 
 interface Props {
   token: string
@@ -56,7 +58,7 @@ export default function ReviewAction({
     const decision = done?.decision ?? reviewStatus
     const isApproved = decision === 'APPROVED'
     return (
-      <div className="px-6 py-8 text-center">
+      <div className="px-6 py-10 text-center">
         <div className={`inline-flex h-16 w-16 items-center justify-center rounded-full mb-4 ${
           isApproved ? 'bg-green-100' : 'bg-red-100'
         }`}>
@@ -68,37 +70,36 @@ export default function ReviewAction({
         <h2 className="text-lg font-bold text-gray-900 mb-1">
           {done ? done.message : `Already ${isApproved ? 'completed' : 'submitted'}`}
         </h2>
-        <p className="text-sm text-gray-500 mb-5">
+        <p className="text-sm text-gray-500 mb-6">
           Your {isApprover ? 'decision' : 'review'} for <strong>{documentTitle}</strong> has been recorded.
         </p>
-        <a
-          href={`${appUrl}/documents/${documentId}`}
-          className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white"
-          style={{ backgroundColor: '#1C3557' }}
-        >
-          <ExternalLink className="h-4 w-4" />
-          View Document in DMS
+        <a href={`${appUrl}/documents/${documentId}`}>
+          <Button style={{ backgroundColor: '#1C3557', color: 'white' }} className="gap-2">
+            <ExternalLink className="h-4 w-4" />
+            View Document in DMS
+          </Button>
         </a>
       </div>
     )
   }
 
-  // ── Wrong stage (document status changed) ─────────────────────────────────
+  // ── Wrong stage ────────────────────────────────────────────────────────────
   if (wrongStage) {
     return (
-      <div className="px-6 py-8 text-center">
-        <div className="text-4xl mb-3">ℹ️</div>
-        <p className="text-sm text-gray-600">
+      <div className="px-6 py-10 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 mx-auto mb-4">
+          <AlertTriangle className="h-7 w-7 text-amber-600" />
+        </div>
+        <h2 className="text-base font-bold text-gray-900 mb-1">No Action Required</h2>
+        <p className="text-sm text-gray-500 mb-6">
           This document is no longer awaiting your {isApprover ? 'approval' : 'review'}.
           It may have been recalled or advanced.
         </p>
-        <a
-          href={`${appUrl}/documents/${documentId}`}
-          className="mt-4 inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white"
-          style={{ backgroundColor: '#1C3557' }}
-        >
-          <ExternalLink className="h-4 w-4" />
-          View Document in DMS
+        <a href={`${appUrl}/documents/${documentId}`}>
+          <Button style={{ backgroundColor: '#1C3557', color: 'white' }} className="gap-2">
+            <ExternalLink className="h-4 w-4" />
+            View Document in DMS
+          </Button>
         </a>
       </div>
     )
@@ -106,33 +107,28 @@ export default function ReviewAction({
 
   // ── Active review / approval ───────────────────────────────────────────────
   return (
-    <div className="px-6 py-5 space-y-5">
+    <div className="px-6 py-5 space-y-4">
 
       {/* Step 1: Open in SharePoint */}
       {sharePointUrl && (
         <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
           <div className="flex items-start gap-3">
-            <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-white text-xs font-bold">
-              1
-            </div>
+            <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-white text-xs font-bold">1</div>
             <div className="flex-1">
               <p className="font-semibold text-gray-800 text-sm">Open &amp; annotate in Office Online</p>
               <p className="text-xs text-gray-500 mt-0.5">
                 Read the document. Use <strong>Word comments</strong> or <strong>Track Changes</strong> to leave
-                inline feedback — all collaborators see your annotations in real time.
+                inline feedback.
               </p>
               <a
                 href={sharePointUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-3 inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white transition-all hover:opacity-90"
+                className="mt-3 inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white"
                 style={{ backgroundColor: '#0078D4' }}
               >
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12.5 2C9.46 2 7 4.46 7 7.5c0 .95.25 1.84.68 2.61L3 14.5V20h5.5l4.32-4.32c.47.2.98.32 1.5.32 2.76 0 5-2.24 5-5S15.76 2 12.5 2zm0 8c-1.65 0-3-1.35-3-3s1.35-3 3-3 3 1.35 3 3-1.35 3-3 3z"/>
-                </svg>
+                <ExternalLink className="h-4 w-4" />
                 Open &amp; Annotate in Office Online
-                <ExternalLink className="h-3.5 w-3.5 opacity-70" />
               </a>
             </div>
           </div>
@@ -152,73 +148,81 @@ export default function ReviewAction({
             <p className="font-semibold text-gray-800 text-sm">Submit your formal decision</p>
             <p className="text-xs text-gray-500 mt-0.5">
               {isApprover
-                ? 'Your decision is final. Approve to publish this document, or reject to return it to the manager.'
-                : 'Once you have reviewed and annotated the document, record your decision here. This is logged in the audit trail.'}
+                ? 'Your decision is final. Approve to publish this document, or reject to return it.'
+                : 'After reviewing, record your decision. This is logged in the audit trail.'}
             </p>
           </div>
         </div>
 
         {error && (
-          <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
-            {error}
+          <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2">
+            <AlertTriangle className="h-4 w-4 text-red-500 flex-shrink-0" />
+            <p className="text-sm text-red-700">{error}</p>
           </div>
         )}
 
-        <textarea
+        <Textarea
           value={comments}
           onChange={(e) => setComments(e.target.value)}
           rows={3}
           placeholder={
             isApprover
               ? 'Add approval notes or reason for rejection…'
-              : 'Summarise your findings, issues noted, or any comments for the document manager…'
+              : 'Summarise your findings, issues noted, or any comments for the manager…'
           }
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#1C3557] focus:outline-none focus:ring-1 focus:ring-[#1C3557] resize-none"
         />
 
-        {/* Reviewer: single button */}
         {!isApprover && (
           <div className="space-y-2">
-            <button
+            <Button
               onClick={() => submit('APPROVED')}
               disabled={!!loading}
-              className="w-full inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-bold text-white transition-all disabled:opacity-60 hover:opacity-90"
-              style={{ backgroundColor: '#1C3557' }}
+              className="w-full h-11"
+              style={{ backgroundColor: '#1C3557', color: 'white' }}
             >
-              <CheckCircle className="h-4 w-4" />
-              {loading === 'APPROVED' ? 'Submitting…' : 'Mark Review Complete'}
-            </button>
+              {loading === 'APPROVED' ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Submitting…</>
+              ) : (
+                <><CheckCircle className="mr-2 h-4 w-4" />Mark Review Complete</>
+              )}
+            </Button>
             <p className="text-[11px] text-gray-400 text-center">
-              Ensure you have added your annotations in Office Online before submitting.
+              Ensure annotations are added in Office Online before submitting.
             </p>
           </div>
         )}
 
-        {/* Approver: two buttons */}
         {isApprover && (
           <div className="space-y-3">
             <div className="flex flex-wrap gap-2">
-              <button
+              <Button
                 onClick={() => submit('APPROVED')}
                 disabled={!!loading}
-                className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold text-white transition-all disabled:opacity-60 hover:opacity-90"
-                style={{ backgroundColor: '#16A34A' }}
+                className="flex-1"
+                style={{ backgroundColor: '#16A34A', color: 'white' }}
               >
-                <CheckCircle className="h-4 w-4" />
-                {loading === 'APPROVED' ? 'Approving…' : 'Final Approve'}
-              </button>
-              <button
+                {loading === 'APPROVED' ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Approving…</>
+                ) : (
+                  <><CheckCircle className="mr-2 h-4 w-4" />Final Approve</>
+                )}
+              </Button>
+              <Button
                 onClick={() => submit('REJECTED')}
                 disabled={!!loading}
-                className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold text-white transition-all disabled:opacity-60 bg-red-600 hover:bg-red-700"
+                variant="destructive"
+                className="flex-1"
               >
-                <XCircle className="h-4 w-4" />
-                {loading === 'REJECTED' ? 'Rejecting…' : 'Reject'}
-              </button>
+                {loading === 'REJECTED' ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Rejecting…</>
+                ) : (
+                  <><XCircle className="mr-2 h-4 w-4" />Reject</>
+                )}
+              </Button>
             </div>
             <p className="text-[11px] text-gray-400">
               <strong>Final Approve</strong> — marks document as officially approved &nbsp;·&nbsp;
-              <strong>Reject</strong> — returns document to manager with your comments
+              <strong>Reject</strong> — returns to manager with your comments
             </p>
           </div>
         )}

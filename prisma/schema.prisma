@@ -20,6 +20,10 @@ enum DocumentStatus {
   REVIEW_COMPLETE
   PENDING_APPROVAL
   APPROVED
+  EXCO_PENDING
+  CONTROLLED
+  SUPERSEDED
+  CANCELLED
   REJECTED
   CHANGES_REQUESTED
 }
@@ -43,38 +47,78 @@ enum ActivityAction {
   APPROVED
   REJECTED
   COMMENT_ADDED
+  CONTROLLED
+  SUPERSEDED
+  CANCELLED
+  EXCO_SUBMITTED
+  SIGNED_PAGE_UPLOADED
+  AMENDED
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  password  String
-  role      Role
-  createdAt DateTime @default(now())
+  id             String   @id @default(cuid())
+  name           String
+  email          String   @unique
+  password       String
+  role           Role
+  departmentRole String?  // LEGAL | INTERNAL_AUDIT | QUALITY | PROCEDURES
+  createdAt      DateTime @default(now())
 
-  uploadedDocuments Document[]        @relation("UploadedBy")
+  uploadedDocuments Document[]         @relation("UploadedBy")
   reviews           DocumentReview[]
   comments          DocumentComment[]
-  versionUploads    DocumentVersion[] @relation("VersionUploadedBy")
+  versionUploads    DocumentVersion[]  @relation("VersionUploadedBy")
   activities        DocumentActivity[] @relation("ActivityUser")
+  notifications     Notification[]
+}
+
+model Notification {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       String
+  title      String
+  message    String
+  documentId String?
+  read       Boolean  @default(false)
+  createdAt  DateTime @default(now())
 }
 
 model Document {
-  id          String         @id @default(cuid())
-  title       String
-  description String?
-  category    String?
-  tags        String?
-  fileUrl           String
-  fileName          String
-  fileType          String
-  fileSize          Int
-  status            DocumentStatus @default(DRAFT)
-  version           Int            @default(1)
-  sharePointUrl     String?
-  sharePointItemId  String?
+  id               String         @id @default(cuid())
+  title            String
+  description      String?
+  category         String?
+  tags             String?
+  fileUrl          String
+  fileName         String
+  fileType         String
+  fileSize         Int
+  status           DocumentStatus @default(DRAFT)
+  version          Int            @default(1)
+  sharePointUrl    String?
+  sharePointItemId String?
   reviewDeadlineDays Int?
+
+  // SANPC document control fields
+  documentNumber    String?
+  revision          String?  @default("00")
+  originalDate      String?
+  authorisedBy      String?
+  originator        String?
+  purpose           String?
+  documentTypeCode  String?
+  nextReviewDate    String?
+
+  // Lifecycle fields
+  retentionDate     String?   // 40 years from controlled date
+  signedPageUrl     String?   // uploaded signed authorisation page
+  signedPageName    String?
+  excoResolutionUrl  String?   // Board resolution for Policy docs
+  excoResolutionName String?
+  isExcoRequired    Boolean   @default(false)
+  controlledAt      String?   // date first marked CONTROLLED
+  amendmentCount    Int       @default(0)
 
   uploadedById String
   uploadedBy   User   @relation("UploadedBy", fields: [uploadedById], references: [id])
@@ -105,11 +149,14 @@ model DocumentReview {
   reviewer   User         @relation(fields: [reviewerId], references: [id])
   order      Int
   isApprover Boolean      @default(false)
+  isMandatory Boolean     @default(false)  // Legal, Internal Audit, Quality, Procedures
+  mandatoryRole String?                    // e.g. "LEGAL"
   status     ReviewStatus @default(PENDING)
   comments   String?
   reviewedAt DateTime?
   startedAt  DateTime?
   deadline   DateTime?
+  reminderSentAt DateTime?                 // day-18 reminder tracking
 }
 
 model DocumentComment {

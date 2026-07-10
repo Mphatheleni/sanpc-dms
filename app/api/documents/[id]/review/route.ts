@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { calcDeadline } from '@/lib/sla'
 import { sendBulkReviewNotifications, sendOriginatorNotification } from '@/lib/email'
+import { createNotification } from '@/lib/notify'
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession()
@@ -82,6 +83,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         data: { status: 'REVIEW_COMPLETE' },
       })
       // Notify document manager: all reviews done, ready to send for approval
+      createNotification(
+        document.uploadedBy.id,
+        'REVIEW_COMPLETE',
+        `Review Complete: ${document.title}`,
+        `All reviewers have completed their review of "${document.title}". Ready to advance to approval.`,
+        id,
+      )
       const appUrl = process.env.APP_URL || 'http://localhost:3000'
       sendOriginatorNotification({
         toEmail: document.uploadedBy.email,
@@ -111,6 +119,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }),
     ])
     // Notify originator the document is back with them
+    createNotification(
+      document.uploadedBy.id,
+      decision === 'REJECTED' ? 'REJECTED' : 'CHANGES_REQUESTED',
+      `Document ${decision === 'REJECTED' ? 'Rejected' : 'Changes Requested'}: ${document.title}`,
+      `${session.name} has ${decision === 'REJECTED' ? 'rejected' : 'requested changes on'} "${document.title}".${comments ? ` Comment: ${comments}` : ''}`,
+      id,
+    )
     const appUrl = process.env.APP_URL || 'http://localhost:3000'
     sendOriginatorNotification({
       toEmail: document.uploadedBy.email,
