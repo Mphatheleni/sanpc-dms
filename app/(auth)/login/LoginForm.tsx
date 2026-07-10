@@ -166,7 +166,7 @@ export default function LoginForm({ entraError }: { entraError?: string }) {
         </div>
 
         <p className="text-center text-[11px] text-white/30 mt-5 tracking-widest uppercase">
-          © 2025 SANPC · Document Management System
+          © 2026 SANPC · Document Management System
         </p>
       </div>
     </div>
