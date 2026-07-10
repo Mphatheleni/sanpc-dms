@@ -18,11 +18,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // Allow static files
+  // Allow static files and public assets
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||
-    pathname.startsWith('/public')
+    /\.(png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|otf)$/.test(pathname)
   ) {
     return NextResponse.next()
   }

@@ -2,7 +2,7 @@
 
 import { useRouter, usePathname } from 'next/navigation'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { LogOut, Bell, Search, CheckCircle, AlertTriangle, MessageSquare, Clock, FileCheck } from 'lucide-react'
+import { LogOut, Bell, Search, CheckCircle, AlertTriangle, MessageSquare, Clock, FileCheck, User } from 'lucide-react'
 import type { SessionUser } from '@/types'
 
 const roleLabels: Record<string, string> = {
@@ -66,8 +66,10 @@ export default function Header({ session }: { session: SessionUser }) {
   const pathname = usePathname()
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [bellOpen, setBellOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
   const [search, setSearch] = useState('')
   const bellRef = useRef<HTMLDivElement>(null)
+  const profileRef = useRef<HTMLDivElement>(null)
 
   const unread = notifications.filter((n) => !n.read).length
 
@@ -84,16 +86,15 @@ export default function Header({ session }: { session: SessionUser }) {
     return () => clearInterval(interval)
   }, [fetchNotifications])
 
-  // Close popover on outside click
+  // Close popovers on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (bellRef.current && !bellRef.current.contains(e.target as Node)) {
-        setBellOpen(false)
-      }
+      if (bellRef.current && !bellRef.current.contains(e.target as Node)) setBellOpen(false)
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) setProfileOpen(false)
     }
-    if (bellOpen) document.addEventListener('mousedown', handleClick)
+    document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
-  }, [bellOpen])
+  }, [])
 
   async function markAllRead() {
     await fetch('/api/notifications', { method: 'PATCH' })
@@ -208,29 +209,56 @@ export default function Header({ session }: { session: SessionUser }) {
           {roleLabels[session.role] ?? session.role}
         </span>
 
-        {/* Avatar + name */}
-        <div className="flex items-center gap-2">
-          <div
-            className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white flex-shrink-0"
-            style={{ backgroundColor: '#1C3557' }}
+        {/* Avatar + profile dropdown */}
+        <div className="relative" ref={profileRef}>
+          <button
+            onClick={() => setProfileOpen((p) => !p)}
+            className="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-gray-100 transition-colors"
           >
-            {initials}
-          </div>
-          <div className="hidden md:block">
-            <p className="text-sm font-semibold text-gray-800 leading-tight">{session.name}</p>
-            <p className="text-xs text-gray-400 leading-tight">{session.email}</p>
-          </div>
-        </div>
+            <div
+              className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white flex-shrink-0"
+              style={{ backgroundColor: '#1C3557' }}
+            >
+              {initials}
+            </div>
+            <div className="hidden md:block text-left">
+              <p className="text-sm font-semibold text-gray-800 leading-tight">{session.name}</p>
+              <p className="text-xs text-gray-400 leading-tight">{roleLabels[session.role] ?? session.role}</p>
+            </div>
+          </button>
 
-        {/* Logout */}
-        <button
-          onClick={logout}
-          className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm text-gray-500 hover:text-red-600 hover:bg-red-50 transition-colors"
-          title="Logout"
-        >
-          <LogOut className="h-4 w-4" />
-          <span className="hidden sm:inline">Logout</span>
-        </button>
+          {profileOpen && (
+            <div className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-gray-200 bg-white shadow-xl z-50 overflow-hidden">
+              {/* Profile header */}
+              <div className="px-4 py-4 border-b border-gray-100" style={{ background: 'linear-gradient(135deg, #1C3557 0%, #142840 100%)' }}>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-full text-sm font-bold text-white flex-shrink-0 border-2 border-white/20"
+                    style={{ backgroundColor: roleColors[session.role]?.bg ? '#1C3557' : '#1C3557' }}>
+                    {initials}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-white truncate">{session.name}</p>
+                    <p className="text-xs text-white/60 truncate mt-0.5">{session.email}</p>
+                    <span className="inline-flex mt-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                      style={{ backgroundColor: roleColors[session.role]?.bg, color: roleColors[session.role]?.text }}>
+                      {roleLabels[session.role] ?? session.role}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              {/* Actions */}
+              <div className="p-2">
+                <button
+                  onClick={() => { setProfileOpen(false); logout() }}
+                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Sign out
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   )

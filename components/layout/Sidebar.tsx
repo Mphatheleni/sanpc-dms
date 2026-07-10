@@ -37,6 +37,63 @@ const roleColors: Record<string, string> = {
   APPROVER:         '#16A34A',
 }
 
+function NavItems({
+  items,
+  pathname,
+  collapsed,
+}: {
+  items: typeof navItems
+  pathname: string
+  collapsed: boolean
+}) {
+  // Pick the single most-specific matching item so only one is ever highlighted
+  const activeHref = items
+    .filter(({ href }) => pathname === href || pathname.startsWith(`${href}/`))
+    .sort((a, b) => b.href.length - a.href.length)[0]?.href
+
+  return (
+    <>
+      {items.map(({ href, label, icon: Icon }) => {
+        const active = href === activeHref
+        return (
+          <Link
+            key={href}
+            href={href}
+            title={collapsed ? label : undefined}
+            className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150 relative"
+            style={
+              active
+                ? { backgroundColor: 'rgba(245,166,35,0.15)', color: '#F5A623' }
+                : { color: 'rgba(255,255,255,0.5)' }
+            }
+            onMouseEnter={(e) => {
+              if (!active) {
+                (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.06)'
+                ;(e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.9)'
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!active) {
+                (e.currentTarget as HTMLElement).style.backgroundColor = ''
+                ;(e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.5)'
+              }
+            }}
+          >
+            {active && (
+              <div
+                className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-full"
+                style={{ backgroundColor: '#F5A623' }}
+              />
+            )}
+            <Icon className="h-4 w-4 flex-shrink-0" />
+            {!collapsed && <span className="truncate">{label}</span>}
+          </Link>
+        )
+      })}
+    </>
+  )
+}
+
 export default function Sidebar({ session }: { session: SessionUser }) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
@@ -89,41 +146,7 @@ export default function Sidebar({ session }: { session: SessionUser }) {
 
       {/* Navigation */}
       <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-hidden">
-        {visible.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href || (href !== '/dashboard' && pathname.startsWith(`${href}/`))
-          return (
-            <Link
-              key={href}
-              href={href}
-              title={collapsed ? label : undefined}
-              className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150 relative"
-              style={
-                active
-                  ? { backgroundColor: 'rgba(245,166,35,0.15)', color: '#F5A623' }
-                  : { color: 'rgba(255,255,255,0.5)' }
-              }
-              onMouseEnter={(e) => {
-                if (!active) {
-                  (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.06)'
-                  ;(e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.9)'
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!active) {
-                  (e.currentTarget as HTMLElement).style.backgroundColor = ''
-                  ;(e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.5)'
-                }
-              }}
-            >
-              {active && (
-                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-full"
-                  style={{ backgroundColor: '#F5A623' }} />
-              )}
-              <Icon className="h-4 w-4 flex-shrink-0" />
-              {!collapsed && <span className="truncate">{label}</span>}
-            </Link>
-          )
-        })}
+        <NavItems items={visible} pathname={pathname} collapsed={collapsed} />
       </nav>
 
       {/* User card */}
