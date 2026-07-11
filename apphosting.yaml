@@ -22,10 +22,19 @@ env:
     availability:
       - RUNTIME
 
-  # Google Cloud Storage bucket for document files
-  # Go to Firebase Console → Storage → Get Started → copy your bucket name (e.g. sanpc-dms.appspot.com)
-  - variable: GOOGLE_CLOUD_BUCKET
-    value: sanpc-dms.appspot.com
+  # SharePoint Document Storage
+  - variable: SHAREPOINT_SITE_ID
+    value: "sanpc00.sharepoint.com,8c205f81-186d-48c3-b4bb-449965d37af9,740f165f-f39c-44be-89f7-4c4118351e67"
+    availability:
+      - RUNTIME
+
+  - variable: SHAREPOINT_DRIVE_ID
+    value: "b!gV8gjG0Yw0i0u0SZZdN6-V8WD3Sc875EifdMQRg1Hme802rZTalMSpD8kO-llB1S"
+    availability:
+      - RUNTIME
+
+  - variable: SHAREPOINT_FOLDER
+    value: "DMS-Archive"
     availability:
       - RUNTIME
 
@@ -55,4 +64,14 @@ env:
     secret: DATABASE_URL
     availability:
       - BUILD
+      - RUNTIME
+
+  - variable: POWER_AUTOMATE_URL
+    secret: POWER_AUTOMATE_URL
+    availability:
+      - RUNTIME
+
+  - variable: POWER_AUTOMATE_EMAIL_URL
+    secret: POWER_AUTOMATE_EMAIL_URL
+    availability:
       - RUNTIME
