@@ -66,12 +66,3 @@ env:
       - BUILD
       - RUNTIME
 
-  - variable: POWER_AUTOMATE_URL
-    secret: POWER_AUTOMATE_URL
-    availability:
-      - RUNTIME
-
-  - variable: POWER_AUTOMATE_EMAIL_URL
-    secret: POWER_AUTOMATE_EMAIL_URL
-    availability:
-      - RUNTIME
