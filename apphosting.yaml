@@ -22,6 +22,13 @@ env:
     availability:
       - RUNTIME
 
+  # Google Cloud Storage — fallback when SharePoint is unavailable
+  # Enable Firebase Storage in the console first: firebase.google.com → Storage → Get started
+  - variable: GOOGLE_CLOUD_BUCKET
+    value: sanpc-dms.appspot.com
+    availability:
+      - RUNTIME
+
   # SharePoint Document Storage
   - variable: SHAREPOINT_SITE_ID
     value: "sanpc00.sharepoint.com,8c205f81-186d-48c3-b4bb-449965d37af9,740f165f-f39c-44be-89f7-4c4118351e67"

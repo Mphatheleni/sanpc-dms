@@ -19,6 +19,8 @@ export async function POST(request: NextRequest) {
   const uniqueName = `${randomUUID()}${ext}`
   const mimeType = file.type || 'application/octet-stream'
 
+  const errors: string[] = []
+
   // 1. SharePoint (if configured)
   if (isSharePointConfigured()) {
     try {
@@ -35,14 +37,17 @@ export async function POST(request: NextRequest) {
         })
       }
     } catch (err) {
-      console.error('[upload] SharePoint error, trying GCS:', err)
+      const msg = String(err)
+      console.error('[upload] SharePoint error:', msg)
+      errors.push(`SharePoint: ${msg}`)
     }
   }
 
-  // 2. Google Cloud Storage (Firebase/Cloud Run production)
+  // 2. Google Cloud Storage fallback
   if (isGCSConfigured()) {
     try {
       await uploadToGCS(uniqueName, buffer, mimeType)
+      console.log(`[upload] GCS success: ${uniqueName}`)
       return NextResponse.json({
         storedName: uniqueName,
         fileName: file.name,
@@ -52,11 +57,13 @@ export async function POST(request: NextRequest) {
         sharePointItemId: null,
       })
     } catch (err) {
-      console.error('[upload] GCS error, trying local:', err)
+      const msg = String(err)
+      console.error('[upload] GCS error:', msg)
+      errors.push(`GCS: ${msg}`)
     }
   }
 
-  // 3. Local filesystem fallback (dev only — read-only on Cloud Run)
+  // 3. Local filesystem (dev only — fails on Cloud Run)
   try {
     const { storedName, size } = await saveFile(uniqueName, buffer)
     return NextResponse.json({
@@ -68,10 +75,12 @@ export async function POST(request: NextRequest) {
       sharePointItemId: null,
     })
   } catch (err) {
-    console.error('[upload] Local storage failed:', err)
-    return NextResponse.json(
-      { error: 'File storage unavailable. Configure GOOGLE_CLOUD_BUCKET or SharePoint.' },
-      { status: 500 }
-    )
+    errors.push(`Local: ${String(err)}`)
   }
+
+  console.error('[upload] All storage backends failed:', errors)
+  return NextResponse.json(
+    { error: 'File upload failed', details: errors },
+    { status: 500 }
+  )
 }
