@@ -1,7 +1,6 @@
 import { SignJWT, jwtVerify } from 'jose'
 import { cookies } from 'next/headers'
 import { NextRequest } from 'next/server'
-import { prisma } from './db'
 
 const SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'sanpc-dms-secret-key-change-in-production'
@@ -41,6 +40,8 @@ export async function getSession(): Promise<SessionPayload | null> {
   if (!payload) return null
 
   // Refresh role and name from DB — JWT may be stale if admin changed the role
+  // Dynamic import keeps this module Edge-safe (middleware imports auth.ts but only uses verifyJWT)
+  const { prisma } = await import('./db')
   const user = await prisma.user.findUnique({
     where: { id: payload.userId },
     select: { role: true, name: true, email: true },
