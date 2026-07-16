@@ -13,7 +13,7 @@ export async function DELETE(
 
   const { id } = await params
   try {
-    await prisma.mandatoryFunctionConfig.delete({ where: { id } })
+    await prisma.mandatoryReviewerConfig.delete({ where: { id } })
     return NextResponse.json({ ok: true })
   } catch {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })

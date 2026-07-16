@@ -75,17 +75,19 @@ model User {
   versionUploads           DocumentVersion[]         @relation("VersionUploadedBy")
   activities               DocumentActivity[]        @relation("ActivityUser")
   notifications            Notification[]
+  mandatoryReviewerConfigs MandatoryReviewerConfig[]
 }
 
-/// Maps a document type to which department/functions are mandatory reviewers.
-/// The actual person is resolved at runtime via User.departmentRole.
-model MandatoryFunctionConfig {
+/// Maps a document type to specific mandatory reviewers (person-based).
+/// When uploading a document of this type, these people are pre-selected as reviewers.
+model MandatoryReviewerConfig {
   id           String   @id @default(cuid())
   documentType String   // e.g. "Policy", "Procedure"
-  deptRole     String   // LEGAL | INTERNAL_AUDIT | QUALITY | PROCEDURES
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt    DateTime @default(now())
 
-  @@unique([documentType, deptRole])
+  @@unique([documentType, userId])
 }
 
 model Notification {

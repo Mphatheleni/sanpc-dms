@@ -48,12 +48,11 @@ interface UserOption {
   departmentRole?: string
 }
 
-interface MandatoryFunctionConfig {
+interface MandatoryReviewer {
   id: string
   documentType: string
-  deptRole: string
-  deptLabel: string
-  user: { id: string; name: string; email: string; role: string } | null
+  userId: string
+  user: { id: string; name: string; email: string; role: string }
 }
 
 export default function UploadForm({ users }: { users: UserOption[] }) {
@@ -96,16 +95,12 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
   const [reviewDeadlineDays, setReviewDeadlineDays] = useState<string>('')
   const [dragOverId, setDragOverId] = useState<string | null>(null)
 
-  // Mandatory reviewers — function-based, auto-loaded per document type
-  const [mandatoryFunctions, setMandatoryFunctions] = useState<MandatoryFunctionConfig[]>([])
+  // Mandatory reviewers — person-based, auto-loaded per document type
+  const [mandatoryReviewers, setMandatoryReviewers] = useState<MandatoryReviewer[]>([])
   const [loadingMandatory, setLoadingMandatory] = useState(false)
-  // Roles manually unticked by the Document Controller for this specific document
-  const [uncheckedRoles, setUncheckedRoles] = useState<Set<string>>(new Set())
 
-  // IDs of users that are currently auto-included as mandatory
-  const allMandatoryUserIds = new Set(
-    mandatoryFunctions.filter((f) => f.user).map((f) => f.user!.id)
-  )
+  // IDs of users that are mandatory for the current document type
+  const mandatoryUserIds = new Set(mandatoryReviewers.map((m) => m.user.id))
 
   const reviewerUsers = users.filter((u) => u.role === 'REVIEWER' || u.role === 'ADMIN')
   const approverUsers = users.filter((u) => u.role === 'APPROVER' || u.role === 'ADMIN')
@@ -128,49 +123,26 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
     return () => clearTimeout(timer)
   }, [subjectCode, category, unitCode])
 
-  // Fetch mandatory functions when category changes; clear immediately so sync effect fires
+  // When category changes: fetch mandatory reviewers and pre-add them to the reviewer list
   useEffect(() => {
-    setMandatoryFunctions([])
-    setUncheckedRoles(new Set())
+    setMandatoryReviewers([])
+    setReviewers([])
     if (!category) return
     setLoadingMandatory(true)
     fetch(`/api/mandatory-reviewers?type=${encodeURIComponent(category)}`)
       .then((r) => r.json())
-      .then((data) => setMandatoryFunctions(Array.isArray(data) ? data : []))
-      .catch(() => setMandatoryFunctions([]))
+      .then((data: MandatoryReviewer[]) => {
+        const configs = Array.isArray(data) ? data : []
+        setMandatoryReviewers(configs)
+        setReviewers(
+          configs.map((c, i) => ({
+            userId: c.user.id, name: c.user.name, email: c.user.email, order: i + 1,
+          }))
+        )
+      })
+      .catch(() => {})
       .finally(() => setLoadingMandatory(false))
   }, [category])
-
-  // Sync mandatory functions → reviewers whenever functions or unchecked set changes
-  useEffect(() => {
-    const checkedUsers = mandatoryFunctions
-      .filter((f) => !uncheckedRoles.has(f.deptRole) && f.user)
-      .map((f) => f.user!)
-
-    setReviewers((prev) => {
-      // Keep manually-added reviewers (those not in the full mandatory set)
-      const manual = prev.filter((r) => !allMandatoryUserIds.has(r.userId))
-      // Add checked mandatory users that aren't already in the list
-      const toAdd = checkedUsers.filter((u) => !manual.some((r) => r.userId === u.id))
-      const combined = [
-        ...manual,
-        ...toAdd.map((u, i) => ({
-          userId: u.id, name: u.name, email: u.email, order: manual.length + i + 1,
-        })),
-      ]
-      return combined.map((r, i) => ({ ...r, order: i + 1 }))
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mandatoryFunctions, uncheckedRoles])
-
-  function toggleMandatoryRole(deptRole: string, checked: boolean) {
-    setUncheckedRoles((prev) => {
-      const next = new Set(prev)
-      if (checked) next.delete(deptRole)
-      else next.add(deptRole)
-      return next
-    })
-  }
 
   function handleDragReorder(setList: React.Dispatch<React.SetStateAction<WorkflowMember[]>>) {
     const dragId = dragItemRef.current
@@ -246,6 +218,7 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
 
   function removeMember(userId: string, setList: React.Dispatch<React.SetStateAction<WorkflowMember[]>>) {
     setList((prev) => prev.filter((m) => m.userId !== userId).map((m, i) => ({ ...m, order: i + 1 })))
+    setMandatoryReviewers((prev) => prev.filter((m) => m.user.id !== userId))
   }
 
   function addMetadata() { setMetadata((prev) => [...prev, { key: '', value: '' }]) }
@@ -325,7 +298,7 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
         ) : (
           <div className="space-y-1.5">
             {members.map((m, i) => {
-              const isMandatory = label === 'Reviewers' && allMandatoryUserIds.has(m.userId)
+              const isMandatory = label === 'Reviewers' && mandatoryUserIds.has(m.userId)
               return (
                 <div
                   key={m.userId}
@@ -557,55 +530,33 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
             </p>
           </div>
 
-          {/* ── Mandatory reviewers panel (FR-3.1, 3.3) ──────────────────── */}
-          {category && (loadingMandatory || mandatoryFunctions.length > 0) && (
-            <div className="rounded-xl border-2 border-purple-200 bg-purple-50 p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4 text-purple-700" />
+          {/* Mandatory reviewers for this document type */}
+          {category && (loadingMandatory || mandatoryReviewers.length > 0) && (
+            <div className="rounded-xl border border-purple-200 bg-purple-50 px-4 py-3">
+              <div className="flex items-center gap-2 mb-2">
+                <ShieldCheck className="h-4 w-4 text-purple-600 flex-shrink-0" />
                 <p className="text-sm font-semibold text-purple-800">
-                  Mandatory Reviewers — {category}
+                  Mandatory reviewers for <span className="italic">{category}</span>
                 </p>
               </div>
-              <p className="text-xs text-purple-600">
-                These functions are required reviewers for {category} documents and have been automatically added below.
-                Untick any that don&apos;t apply to this specific document.
-              </p>
-
               {loadingMandatory ? (
-                <div className="space-y-2">
-                  {[1, 2].map((i) => <div key={i} className="h-11 animate-pulse rounded-lg bg-purple-100" />)}
+                <div className="flex gap-2">
+                  {[1, 2].map((i) => <div key={i} className="h-7 w-28 animate-pulse rounded-full bg-purple-200" />)}
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {mandatoryFunctions.map((fn) => {
-                    const isChecked = !uncheckedRoles.has(fn.deptRole)
-                    return (
-                      <label
-                        key={fn.id}
-                        className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 cursor-pointer transition-all ${
-                          isChecked ? 'border-purple-200 bg-white' : 'border-gray-200 bg-gray-50 opacity-60'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={(e) => toggleMandatoryRole(fn.deptRole, e.target.checked)}
-                          className="h-4 w-4 rounded accent-purple-600 flex-shrink-0"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[10px] font-bold uppercase tracking-wide text-purple-500">{fn.deptLabel}</p>
-                          {fn.user ? (
-                            <p className="text-sm font-medium text-gray-800">{fn.user.name}</p>
-                          ) : (
-                            <p className="text-xs text-amber-600">⚠ No user assigned to this function — configure in Admin</p>
-                          )}
-                        </div>
-                        {isChecked && fn.user && (
-                          <span className="text-[10px] font-semibold text-green-600 flex-shrink-0">Added ✓</span>
-                        )}
-                      </label>
-                    )
-                  })}
+                <div className="flex flex-wrap gap-2">
+                  {mandatoryReviewers.map((m) => (
+                    <span
+                      key={m.id}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-purple-300 bg-white px-3 py-1 text-xs font-semibold text-purple-800"
+                    >
+                      {m.user.name}
+                      <span className="text-[10px] text-purple-400">· pre-selected</span>
+                    </span>
+                  ))}
+                  <p className="w-full text-[11px] text-purple-500 mt-1">
+                    These people are already added as reviewers below. You can remove any using the ✕ button.
+                  </p>
                 </div>
               )}
             </div>
@@ -630,7 +581,7 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
           <div className="rounded-xl border border-gray-200 p-4">
             <MemberList
               label="Reviewers"
-              sublabel="All reviewers receive the document simultaneously. Drag to reorder. Mandatory reviewers (shown in purple) are managed above."
+              sublabel="All reviewers receive the document simultaneously. Drag to reorder. Purple entries are pre-selected mandatory reviewers — you can remove any with ✕."
               members={reviewers}
               pool={reviewerUsers}
               setList={setReviewers}
