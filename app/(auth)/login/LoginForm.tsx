@@ -19,17 +19,24 @@ export default function LoginForm({ entraError }: { entraError?: string }) {
   const [password, setPassword] = useState('')
   const [error, setError]       = useState('')
   const [loading, setLoading]   = useState(false)
-  const [demoLoading, setDemoLoading] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(null)
 
-  async function signIn(emailVal: string, passwordVal: string, demoKey?: string) {
-    if (demoKey) setDemoLoading(demoKey)
-    else setLoading(true)
+  function prefill(acc: typeof DEMO_ACCOUNTS[0]) {
+    setSelected(acc.email)
+    setEmail(acc.email)
+    setPassword('password')
+    setError('')
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true)
     setError('')
     try {
       const res = await fetch('/api/auth/login', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ email: emailVal, password: passwordVal }),
+        body:    JSON.stringify({ email, password }),
       })
       if (res.ok) {
         router.push('/dashboard')
@@ -40,14 +47,8 @@ export default function LoginForm({ entraError }: { entraError?: string }) {
     } catch {
       setError('Network error — please try again')
     } finally {
-      setDemoLoading(null)
       setLoading(false)
     }
-  }
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    signIn(email, password)
   }
 
   const displayError = error || entraError
@@ -122,29 +123,27 @@ export default function LoginForm({ entraError }: { entraError?: string }) {
               </div>
             </div>
 
-            {/* Demo account quick-login tiles */}
+            {/* Demo account quick-fill tiles */}
             <div className="grid grid-cols-2 gap-2 mb-5">
               {DEMO_ACCOUNTS.map((acc) => {
-                const isLoading = demoLoading === acc.email
+                const isSelected = selected === acc.email
                 return (
                   <button
                     key={acc.email}
                     type="button"
-                    disabled={!!demoLoading || loading}
-                    onClick={() => signIn(acc.email, 'password', acc.email)}
-                    className="flex items-center gap-2 rounded-lg border px-3 py-2.5 text-left transition-all hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{ borderColor: `${acc.color}30`, backgroundColor: isLoading ? acc.bg : 'white' }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = acc.bg }}
-                    onMouseLeave={(e) => { if (!isLoading) (e.currentTarget as HTMLElement).style.backgroundColor = 'white' }}
+                    onClick={() => prefill(acc)}
+                    className="flex items-center gap-2 rounded-lg border px-3 py-2.5 text-left transition-all hover:shadow-sm"
+                    style={{
+                      borderColor: isSelected ? acc.color : `${acc.color}30`,
+                      backgroundColor: isSelected ? acc.bg : 'white',
+                      boxShadow: isSelected ? `0 0 0 1px ${acc.color}40` : undefined,
+                    }}
                   >
                     <div
                       className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
                       style={{ backgroundColor: acc.color }}
                     >
-                      {isLoading
-                        ? <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                        : acc.label.charAt(0)
-                      }
+                      {acc.label.charAt(0)}
                     </div>
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-gray-800 truncate leading-tight">{acc.label}</p>
@@ -195,7 +194,7 @@ export default function LoginForm({ entraError }: { entraError?: string }) {
               />
               <button
                 type="submit"
-                disabled={loading || !!demoLoading}
+                disabled={loading}
                 className="w-full rounded-xl py-2.5 text-sm font-semibold text-white transition-all duration-150 disabled:opacity-50 flex items-center justify-center gap-2"
                 style={{ background: 'linear-gradient(135deg, #1C3557 0%, #142840 100%)' }}
               >
