@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Upload, Plus, Trash2, GripVertical, Wand2 } from 'lucide-react'
+import { Upload, Plus, Trash2, GripVertical, Wand2, ShieldCheck } from 'lucide-react'
 import Button from '@/components/ui/Button'
 import { Input, Textarea } from '@/components/ui/Input'
 import UserPicker, { type PickableUser } from '@/components/ui/UserPicker'
@@ -48,13 +48,12 @@ interface UserOption {
   departmentRole?: string
 }
 
-// MANDATORY reviewer roles per CSS/PR/CSF/005 for PO and PR documents
-const MANDATORY_ROLES = ['LEGAL', 'INTERNAL_AUDIT', 'QUALITY', 'PROCEDURES'] as const
-const MANDATORY_ROLE_LABELS: Record<string, string> = {
-  LEGAL: 'Legal',
-  INTERNAL_AUDIT: 'Internal Audit',
-  QUALITY: 'Quality',
-  PROCEDURES: 'Procedures Section',
+interface MandatoryFunctionConfig {
+  id: string
+  documentType: string
+  deptRole: string
+  deptLabel: string
+  user: { id: string; name: string; email: string; role: string } | null
 }
 
 export default function UploadForm({ users }: { users: UserOption[] }) {
@@ -64,6 +63,7 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
   const [submitting, setSubmitting] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [submitError, setSubmitError] = useState('')
+  const [fileError, setFileError] = useState('')
 
   // Step 1: File
   const [file, setFile] = useState<File | null>(null)
@@ -90,47 +90,89 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
   const [originatorUser, setOriginatorUser] = useState<PickableUser | null>(null)
   const [authorizerUser, setAuthorizerUser] = useState<PickableUser | null>(null)
 
-  // Auto-suggest next sequential number when subject/type/unit are all filled
-  useEffect(() => {
-    const docTypeCode = SANPC_DOC_TYPES.find((t) => t.label === category)?.code ?? ''
-    if (!subjectCode || !docTypeCode || !unitCode) { setSuggestedNo(null); return }
-    const timer = setTimeout(async () => {
-      try {
-        const res = await fetch(
-          `/api/documents/next-number?subject=${encodeURIComponent(subjectCode)}&type=${encodeURIComponent(docTypeCode)}&unit=${encodeURIComponent(unitCode)}`
-        )
-        if (res.ok) {
-          const data = await res.json()
-          setSuggestedNo(data.nextNumber)
-        }
-      } catch { /* ignore */ }
-    }, 400)
-    return () => clearTimeout(timer)
-  }, [subjectCode, category, unitCode])
-
   // Step 3: Workflow
   const [reviewers, setReviewers] = useState<WorkflowMember[]>([])
   const [approvers, setApprovers] = useState<WorkflowMember[]>([])
   const [reviewDeadlineDays, setReviewDeadlineDays] = useState<string>('')
   const [dragOverId, setDragOverId] = useState<string | null>(null)
 
+  // Mandatory reviewers — function-based, auto-loaded per document type
+  const [mandatoryFunctions, setMandatoryFunctions] = useState<MandatoryFunctionConfig[]>([])
+  const [loadingMandatory, setLoadingMandatory] = useState(false)
+  // Roles manually unticked by the Document Controller for this specific document
+  const [uncheckedRoles, setUncheckedRoles] = useState<Set<string>>(new Set())
+
+  // IDs of users that are currently auto-included as mandatory
+  const allMandatoryUserIds = new Set(
+    mandatoryFunctions.filter((f) => f.user).map((f) => f.user!.id)
+  )
+
   const reviewerUsers = users.filter((u) => u.role === 'REVIEWER' || u.role === 'ADMIN')
   const approverUsers = users.filter((u) => u.role === 'APPROVER' || u.role === 'ADMIN')
-
   const docTypeCode = SANPC_DOC_TYPES.find((t) => t.label === category)?.code ?? ''
-  const needsMandatoryReviewers = docTypeCode === 'PO' || docTypeCode === 'PR'
-
-  // Mandatory reviewers (users with departmentRole matching required roles)
-  const mandatoryReviewerIds = needsMandatoryReviewers
-    ? users.filter((u) => u.departmentRole && MANDATORY_ROLES.includes(u.departmentRole as never)).map((u) => u.id)
-    : []
-
   const dragItemRef = useRef<string | null>(null)
   const dragOverRef = useRef<string | null>(null)
 
-  function handleDragReorder(
-    setList: React.Dispatch<React.SetStateAction<WorkflowMember[]>>,
-  ) {
+  // Auto-suggest next sequential number when subject/type/unit are all filled
+  useEffect(() => {
+    const code = SANPC_DOC_TYPES.find((t) => t.label === category)?.code ?? ''
+    if (!subjectCode || !code || !unitCode) { setSuggestedNo(null); return }
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/documents/next-number?subject=${encodeURIComponent(subjectCode)}&type=${encodeURIComponent(code)}&unit=${encodeURIComponent(unitCode)}`
+        )
+        if (res.ok) setSuggestedNo((await res.json()).nextNumber)
+      } catch { /* ignore */ }
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [subjectCode, category, unitCode])
+
+  // Fetch mandatory functions when category changes; clear immediately so sync effect fires
+  useEffect(() => {
+    setMandatoryFunctions([])
+    setUncheckedRoles(new Set())
+    if (!category) return
+    setLoadingMandatory(true)
+    fetch(`/api/mandatory-reviewers?type=${encodeURIComponent(category)}`)
+      .then((r) => r.json())
+      .then((data) => setMandatoryFunctions(Array.isArray(data) ? data : []))
+      .catch(() => setMandatoryFunctions([]))
+      .finally(() => setLoadingMandatory(false))
+  }, [category])
+
+  // Sync mandatory functions → reviewers whenever functions or unchecked set changes
+  useEffect(() => {
+    const checkedUsers = mandatoryFunctions
+      .filter((f) => !uncheckedRoles.has(f.deptRole) && f.user)
+      .map((f) => f.user!)
+
+    setReviewers((prev) => {
+      // Keep manually-added reviewers (those not in the full mandatory set)
+      const manual = prev.filter((r) => !allMandatoryUserIds.has(r.userId))
+      // Add checked mandatory users that aren't already in the list
+      const toAdd = checkedUsers.filter((u) => !manual.some((r) => r.userId === u.id))
+      const combined = [
+        ...manual,
+        ...toAdd.map((u, i) => ({
+          userId: u.id, name: u.name, email: u.email, order: manual.length + i + 1,
+        })),
+      ]
+      return combined.map((r, i) => ({ ...r, order: i + 1 }))
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mandatoryFunctions, uncheckedRoles])
+
+  function toggleMandatoryRole(deptRole: string, checked: boolean) {
+    setUncheckedRoles((prev) => {
+      const next = new Set(prev)
+      if (checked) next.delete(deptRole)
+      else next.add(deptRole)
+      return next
+    })
+  }
+
+  function handleDragReorder(setList: React.Dispatch<React.SetStateAction<WorkflowMember[]>>) {
     const dragId = dragItemRef.current
     const overId = dragOverRef.current
     if (!dragId || !overId || dragId === overId) return
@@ -157,6 +199,7 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
   async function uploadFile() {
     if (!file) return
     setUploading(true)
+    setFileError('')
     try {
       const fd = new FormData()
       fd.append('file', file)
@@ -164,16 +207,27 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
       if (res.ok) {
         const data = await res.json()
         setUploadResult({
-          storedName: data.storedName,
-          fileName: data.fileName,
-          fileType: data.fileType,
-          fileSize: data.fileSize,
+          storedName: data.storedName, fileName: data.fileName,
+          fileType: data.fileType, fileSize: data.fileSize,
           sharePointUrl: data.sharePointUrl ?? null,
           sharePointItemId: data.sharePointItemId ?? null,
         })
         if (!title) setTitle(file.name.replace(/\.[^.]+$/, ''))
         setStep(2)
+      } else {
+        const err = await res.json().catch(() => ({}))
+        const details: string[] = err.details ?? []
+        const hasPermission = details.some((d) => d.includes('403') || d.includes('Forbidden') || d.includes('AccessDenied'))
+        if (hasPermission) {
+          setFileError('SharePoint upload was blocked (403 Forbidden). The DMS app may not have permission to write to the SharePoint document library. Please ask your IT administrator to grant Files.ReadWrite.All on the Azure app registration.')
+        } else if (details.length > 0) {
+          setFileError(`Upload failed: ${details[0].replace(/^SharePoint:\s*Error:\s*/i, '')}`)
+        } else {
+          setFileError(err.error || 'Upload failed — please try again.')
+        }
       }
+    } catch {
+      setFileError('Network error — could not reach the server. Please check your connection and try again.')
     } finally {
       setUploading(false)
     }
@@ -190,55 +244,35 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
     setList((prev) => [...prev, { userId, name: user.name, email: user.email, order: prev.length + 1 }])
   }
 
-  function removeMember(
-    userId: string,
-    setList: React.Dispatch<React.SetStateAction<WorkflowMember[]>>,
-  ) {
-    setList((prev) =>
-      prev.filter((m) => m.userId !== userId).map((m, i) => ({ ...m, order: i + 1 }))
-    )
+  function removeMember(userId: string, setList: React.Dispatch<React.SetStateAction<WorkflowMember[]>>) {
+    setList((prev) => prev.filter((m) => m.userId !== userId).map((m, i) => ({ ...m, order: i + 1 })))
   }
 
-  function addMetadata() {
-    setMetadata((prev) => [...prev, { key: '', value: '' }])
-  }
-
+  function addMetadata() { setMetadata((prev) => [...prev, { key: '', value: '' }]) }
   function updateMetadata(index: number, field: 'key' | 'value', value: string) {
     setMetadata((prev) => prev.map((m, i) => (i === index ? { ...m, [field]: value } : m)))
   }
-
-  function removeMetadata(index: number) {
-    setMetadata((prev) => prev.filter((_, i) => i !== index))
-  }
+  function removeMetadata(index: number) { setMetadata((prev) => prev.filter((_, i) => i !== index)) }
 
   async function handleSubmit() {
     if (!uploadResult || !title) return
     if (reviewers.length === 0 && approvers.length === 0) return
     setSubmitting(true)
     setSubmitError('')
-
-    // Build document number from parts if available
-    const docTypeCode = SANPC_DOC_TYPES.find((t) => t.label === category)?.code ?? ''
     const documentNumber = subjectCode && docTypeCode && unitCode && sequentialNo
       ? `${subjectCode.toUpperCase()}/${docTypeCode}/${unitCode.toUpperCase()}/${sequentialNo}`
       : undefined
-
     try {
       const res = await fetch('/api/documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...uploadResult,
-          title,
-          description,
-          category,
-          tags,
+          ...uploadResult, title, description, category, tags,
           reviewDeadlineDays: reviewDeadlineDays ? Number(reviewDeadlineDays) : null,
           reviewers: reviewers.map((r) => ({ userId: r.userId, order: r.order })),
           approvers: approvers.map((a) => ({ userId: a.userId, order: a.order })),
           metadata: metadata.filter((m) => m.key && m.value),
-          documentNumber,
-          documentTypeCode: docTypeCode || undefined,
+          documentNumber, documentTypeCode: docTypeCode || undefined,
           revision: revision || '00',
           originator: originatorUser?.name || originator || undefined,
           authorisedBy: authorizerUser?.name || authorisedBy || undefined,
@@ -248,34 +282,23 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
         }),
       })
       if (res.ok) {
-        const doc = await res.json()
-        router.push(`/documents/${doc.id}`)
+        router.push(`/documents/${(await res.json()).id}`)
       } else {
         const err = await res.json().catch(() => ({}))
         setSubmitError(err.error || `Server error ${res.status}`)
       }
-    } catch (e) {
+    } catch {
       setSubmitError('Network error — please try again')
     } finally {
       setSubmitting(false)
     }
   }
 
-  // Reusable member list UI
   function MemberList({
-    label,
-    sublabel,
-    members,
-    pool,
-    setList,
-    emptyText,
+    label, sublabel, members, pool, setList, emptyText,
   }: {
-    label: string
-    sublabel: string
-    members: WorkflowMember[]
-    pool: UserOption[]
-    setList: React.Dispatch<React.SetStateAction<WorkflowMember[]>>
-    emptyText: string
+    label: string; sublabel: string; members: WorkflowMember[]
+    pool: UserOption[]; setList: React.Dispatch<React.SetStateAction<WorkflowMember[]>>; emptyText: string
   }) {
     const available = pool.filter((u) => !members.find((m) => m.userId === u.id))
     return (
@@ -301,38 +324,51 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
           <p className="text-sm text-gray-400 italic">{emptyText}</p>
         ) : (
           <div className="space-y-1.5">
-            {members.map((m, i) => (
-              <div
-                key={m.userId}
-                draggable
-                onDragStart={() => { dragItemRef.current = m.userId }}
-                onDragEnter={() => { dragOverRef.current = m.userId; setDragOverId(m.userId) }}
-                onDragEnd={() => { handleDragReorder(setList); setDragOverId(null) }}
-                onDragOver={(e) => e.preventDefault()}
-                className={`flex items-center gap-2 rounded-lg border px-3 py-2 transition-colors cursor-grab active:cursor-grabbing ${
-                  dragOverId === m.userId
-                    ? 'border-sanpc-amber bg-amber-50 scale-[1.01]'
-                    : 'border-gray-200 bg-gray-50'
-                }`}
-              >
-                <GripVertical className="h-4 w-4 text-gray-300 flex-shrink-0 cursor-grab" />
-                <span
-                  className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
-                  style={{ backgroundColor: '#1C3557' }}
+            {members.map((m, i) => {
+              const isMandatory = label === 'Reviewers' && allMandatoryUserIds.has(m.userId)
+              return (
+                <div
+                  key={m.userId}
+                  draggable={!isMandatory}
+                  onDragStart={() => { if (!isMandatory) dragItemRef.current = m.userId }}
+                  onDragEnter={() => { dragOverRef.current = m.userId; setDragOverId(m.userId) }}
+                  onDragEnd={() => { handleDragReorder(setList); setDragOverId(null) }}
+                  onDragOver={(e) => e.preventDefault()}
+                  className={`flex items-center gap-2 rounded-lg border px-3 py-2 transition-colors ${
+                    dragOverId === m.userId
+                      ? 'border-sanpc-amber bg-amber-50'
+                      : isMandatory ? 'border-purple-200 bg-purple-50' : 'border-gray-200 bg-gray-50'
+                  } ${!isMandatory ? 'cursor-grab active:cursor-grabbing' : ''}`}
                 >
-                  {i + 1}
-                </span>
-                <span className="flex-1 text-sm font-medium text-gray-700">{m.name}</span>
-                <span className="text-xs text-gray-400 hidden sm:block">{m.email}</span>
-                <button
-                  type="button"
-                  onClick={() => removeMember(m.userId, setList)}
-                  className="rounded p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
+                  {isMandatory
+                    ? <ShieldCheck className="h-4 w-4 text-purple-400 flex-shrink-0" />
+                    : <GripVertical className="h-4 w-4 text-gray-300 flex-shrink-0" />
+                  }
+                  <span
+                    className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                    style={{ backgroundColor: isMandatory ? '#7C3AED' : '#1C3557' }}
+                  >
+                    {i + 1}
+                  </span>
+                  <span className="flex-1 text-sm font-medium text-gray-700">{m.name}</span>
+                  {isMandatory && (
+                    <span className="text-[10px] font-semibold text-purple-500 uppercase tracking-wide hidden sm:block">
+                      Mandatory
+                    </span>
+                  )}
+                  <span className="text-xs text-gray-400 hidden sm:block">{m.email}</span>
+                  {!isMandatory && (
+                    <button
+                      type="button"
+                      onClick={() => removeMember(m.userId, setList)}
+                      className="rounded p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
@@ -349,11 +385,8 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
           <div key={label} className="flex items-center gap-2">
             <div
               className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold transition-colors ${
-                step > i + 1
-                  ? 'bg-green-500 text-white'
-                  : step === i + 1
-                  ? 'text-white'
-                  : 'bg-gray-100 text-gray-400'
+                step > i + 1 ? 'bg-green-500 text-white'
+                  : step === i + 1 ? 'text-white' : 'bg-gray-100 text-gray-400'
               }`}
               style={step === i + 1 ? { backgroundColor: '#1C3557' } : undefined}
             >
@@ -367,7 +400,7 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
         ))}
       </div>
 
-      {/* Step 1: File upload */}
+      {/* ── Step 1: File upload ─────────────────────────────────────────── */}
       {step === 1 && (
         <div className="space-y-4">
           <h2 className="text-lg font-semibold text-gray-800">Upload Document</h2>
@@ -392,20 +425,20 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
                 <p className="text-sm text-gray-400 mt-1">Any file type supported</p>
               </>
             )}
-            <input
-              id="file-input"
-              type="file"
-              className="hidden"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            />
+            <input id="file-input" type="file" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
           </div>
+          {fileError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {fileError}
+            </div>
+          )}
           <Button onClick={uploadFile} loading={uploading} disabled={!file} className="w-full">
             Upload & Continue
           </Button>
         </div>
       )}
 
-      {/* Step 2: Details */}
+      {/* ── Step 2: Details ─────────────────────────────────────────────── */}
       {step === 2 && (
         <div className="space-y-4">
           <h2 className="text-lg font-semibold text-gray-800">Document Details</h2>
@@ -416,12 +449,7 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
             onChange={(e) => setPurpose(e.target.value)}
             placeholder="e.g. To govern the control and management of regulatory documents"
           />
-          <Textarea
-            label="Description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={2}
-          />
+          <Textarea label="Description" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
 
           {/* Document Type */}
           <div className="space-y-1">
@@ -450,87 +478,64 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
             </div>
             <p className="text-xs text-gray-400">Format: SUBJECT / TYPE / UNIT / NUMBER (e.g. CSS/PR/CSF/005)</p>
             <div className="grid grid-cols-2 gap-3">
-              <Input
-                label="Subject Code"
-                value={subjectCode}
-                onChange={(e) => setSubjectCode(e.target.value.toUpperCase())}
-                placeholder="e.g. CSS"
-              />
-              <Input
-                label="Unit Code"
-                value={unitCode}
-                onChange={(e) => setUnitCode(e.target.value.toUpperCase())}
-                placeholder="e.g. CSF"
-              />
+              <Input label="Subject Code" value={subjectCode} onChange={(e) => setSubjectCode(e.target.value.toUpperCase())} placeholder="e.g. CSS" />
+              <Input label="Unit Code" value={unitCode} onChange={(e) => setUnitCode(e.target.value.toUpperCase())} placeholder="e.g. CSF" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Sequential No.</label>
                 <div className="flex gap-1.5">
                   <input
-                    type="text"
-                    value={sequentialNo}
-                    onChange={(e) => setSequentialNo(e.target.value)}
-                    placeholder="e.g. 005"
+                    type="text" value={sequentialNo} onChange={(e) => setSequentialNo(e.target.value)} placeholder="e.g. 005"
                     className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sanpc-navy focus:outline-none focus:ring-1 focus:ring-sanpc-navy"
                   />
                   {suggestedNo && (
-                    <button
-                      type="button"
-                      title={`Use suggested: ${suggestedNo}`}
-                      onClick={() => setSequentialNo(suggestedNo)}
+                    <button type="button" title={`Use suggested: ${suggestedNo}`} onClick={() => setSequentialNo(suggestedNo)}
                       className="flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700 hover:bg-amber-100 transition-colors"
                     >
-                      <Wand2 className="h-3.5 w-3.5" />
-                      {suggestedNo}
+                      <Wand2 className="h-3.5 w-3.5" />{suggestedNo}
                     </button>
                   )}
                 </div>
                 {suggestedNo && <p className="text-[10px] text-gray-400 mt-0.5">Next available: {suggestedNo}</p>}
               </div>
-              <Input
-                label="Revision No."
-                value={revision}
-                onChange={(e) => setRevision(e.target.value)}
-                placeholder="e.g. 00"
-              />
+              <Input label="Revision No." value={revision} onChange={(e) => setRevision(e.target.value)} placeholder="e.g. 00" />
             </div>
           </div>
 
           {/* People */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <UserPicker
-              users={users}
-              value={originatorUser}
+            <UserPicker users={users} value={originatorUser}
               onChange={(u) => { setOriginatorUser(u); if (u) setOriginator(u.name) }}
-              label="Originator"
-              placeholder="Search by name or email…"
-            />
-            <UserPicker
-              users={users}
-              value={authorizerUser}
+              label="Originator" placeholder="Search by name or email…" />
+            <UserPicker users={users} value={authorizerUser}
               onChange={(u) => { setAuthorizerUser(u); if (u) setAuthorisedBy(u.name) }}
-              label="Authorised By"
-              placeholder="Search by name or email…"
-            />
+              label="Authorised By" placeholder="Search by name or email…" />
           </div>
 
-          <Input label="Tags (comma-separated)" value={tags} onChange={(e) => setTags(e.target.value)} />
+          {/* Tags — FR-2.1/2.2 */}
+          <div className="space-y-1">
+            <Input
+              label="Tags"
+              value={tags}
+              onChange={(e) => setTags(e.target.value)}
+              placeholder="e.g. incentives policy, PPE, framework, risk"
+            />
+            <p className="text-xs text-gray-400">
+              Comma-separated keywords used to search for this document — tag the subject, document type, and key themes.
+            </p>
+          </div>
 
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium text-gray-700">Custom Metadata</label>
-              <Button variant="ghost" size="sm" onClick={addMetadata}>
-                <Plus className="h-4 w-4" /> Add Field
-              </Button>
+              <Button variant="ghost" size="sm" onClick={addMetadata}><Plus className="h-4 w-4" /> Add Field</Button>
             </div>
             {metadata.map((m, i) => (
               <div key={i} className="flex gap-2 mb-2">
                 <Input placeholder="Key" value={m.key} onChange={(e) => updateMetadata(i, 'key', e.target.value)} />
                 <Input placeholder="Value" value={m.value} onChange={(e) => updateMetadata(i, 'value', e.target.value)} />
-                <Button variant="ghost" size="sm" onClick={() => removeMetadata(i)}>
-                  <Trash2 className="h-4 w-4 text-red-400" />
-                </Button>
+                <Button variant="ghost" size="sm" onClick={() => removeMetadata(i)}><Trash2 className="h-4 w-4 text-red-400" /></Button>
               </div>
             ))}
           </div>
@@ -542,7 +547,7 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
         </div>
       )}
 
-      {/* Step 3: Workflow */}
+      {/* ── Step 3: Workflow ─────────────────────────────────────────────── */}
       {step === 3 && (
         <div className="space-y-6">
           <div>
@@ -552,65 +557,80 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
             </p>
           </div>
 
-          {/* Mandatory reviewers notice for PO/PR */}
-          {needsMandatoryReviewers && (
-            <div className="rounded-xl border-2 border-purple-200 bg-purple-50 p-4 space-y-2">
-              <p className="text-sm font-semibold text-purple-800">
-                Mandatory Reviewers Required — {category} Document
-              </p>
-              <p className="text-xs text-purple-700">
-                Per CSS/PR/CSF/005, {category} documents must be reviewed by the following departments:
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {MANDATORY_ROLES.map((role) => {
-                  const user = users.find((u) => u.departmentRole === role)
-                  const alreadyAdded = reviewers.some((r) => r.userId === user?.id)
-                  return (
-                    <div key={role} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold border ${
-                      alreadyAdded ? 'bg-green-100 border-green-300 text-green-700' :
-                      user ? 'bg-white border-purple-300 text-purple-700' :
-                      'bg-gray-100 border-gray-200 text-gray-400'
-                    }`}>
-                      {alreadyAdded ? '✓' : user ? '!' : '?'} {MANDATORY_ROLE_LABELS[role]}
-                      {!alreadyAdded && user && (
-                        <button
-                          type="button"
-                          onClick={() => addMember(user.id, reviewers, setReviewers, reviewerUsers)}
-                          className="ml-1 underline text-purple-700 hover:text-purple-900"
-                        >
-                          Add
-                        </button>
-                      )}
-                      {!user && <span className="text-gray-400">(no user)</span>}
-                    </div>
-                  )
-                })}
+          {/* ── Mandatory reviewers panel (FR-3.1, 3.3) ──────────────────── */}
+          {category && (loadingMandatory || mandatoryFunctions.length > 0) && (
+            <div className="rounded-xl border-2 border-purple-200 bg-purple-50 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-purple-700" />
+                <p className="text-sm font-semibold text-purple-800">
+                  Mandatory Reviewers — {category}
+                </p>
               </div>
+              <p className="text-xs text-purple-600">
+                These functions are required reviewers for {category} documents and have been automatically added below.
+                Untick any that don&apos;t apply to this specific document.
+              </p>
+
+              {loadingMandatory ? (
+                <div className="space-y-2">
+                  {[1, 2].map((i) => <div key={i} className="h-11 animate-pulse rounded-lg bg-purple-100" />)}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {mandatoryFunctions.map((fn) => {
+                    const isChecked = !uncheckedRoles.has(fn.deptRole)
+                    return (
+                      <label
+                        key={fn.id}
+                        className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 cursor-pointer transition-all ${
+                          isChecked ? 'border-purple-200 bg-white' : 'border-gray-200 bg-gray-50 opacity-60'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => toggleMandatoryRole(fn.deptRole, e.target.checked)}
+                          className="h-4 w-4 rounded accent-purple-600 flex-shrink-0"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-purple-500">{fn.deptLabel}</p>
+                          {fn.user ? (
+                            <p className="text-sm font-medium text-gray-800">{fn.user.name}</p>
+                          ) : (
+                            <p className="text-xs text-amber-600">⚠ No user assigned to this function — configure in Admin</p>
+                          )}
+                        </div>
+                        {isChecked && fn.user && (
+                          <span className="text-[10px] font-semibold text-green-600 flex-shrink-0">Added ✓</span>
+                        )}
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )}
 
-          {/* Review Deadline */}
+          {/* Review Deadline — FR-4.1 */}
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 flex items-center gap-4">
             <div className="flex-1">
-              <label className="block text-sm font-semibold text-gray-700 mb-0.5">Review deadline (days)</label>
-              <p className="text-xs text-gray-500">Number of calendar days from submission for reviewers and approvers to complete their review. Leave blank for no deadline.</p>
+              <label className="block text-sm font-semibold text-gray-700 mb-0.5">Review deadline (working days)</label>
+              <p className="text-xs text-gray-500">
+                Number of working days from submission for reviewers and approvers to respond. Leave blank for no deadline.
+              </p>
             </div>
             <input
-              type="number"
-              min="1"
-              max="365"
-              value={reviewDeadlineDays}
-              onChange={(e) => setReviewDeadlineDays(e.target.value)}
-              placeholder="e.g. 5"
+              type="number" min="1" max="365" value={reviewDeadlineDays}
+              onChange={(e) => setReviewDeadlineDays(e.target.value)} placeholder="e.g. 5"
               className="w-24 rounded-md border border-gray-300 px-3 py-2 text-sm text-center font-semibold focus:border-sanpc-navy focus:outline-none focus:ring-1 focus:ring-sanpc-navy"
             />
           </div>
 
           {/* Reviewers */}
-          <div className="rounded-xl border border-gray-200 p-4 space-y-0">
+          <div className="rounded-xl border border-gray-200 p-4">
             <MemberList
               label="Reviewers"
-              sublabel="All reviewers receive the document simultaneously. Drag to reorder."
+              sublabel="All reviewers receive the document simultaneously. Drag to reorder. Mandatory reviewers (shown in purple) are managed above."
               members={reviewers}
               pool={reviewerUsers}
               setList={setReviewers}
@@ -633,7 +653,6 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
           {!canProceed && (
             <p className="text-sm text-red-500">Add at least one reviewer or approver to continue.</p>
           )}
-
           {submitError && (
             <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{submitError}</p>
           )}

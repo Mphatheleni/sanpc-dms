@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { ChevronDown, ChevronUp, Download, Eye, EyeOff, FileX } from 'lucide-react'
-import path from 'path'
 
 interface DocumentViewerProps {
   documentId: string
@@ -16,7 +15,7 @@ const TEXT_EXTS = new Set(['txt', 'md', 'csv', 'json', 'xml', 'yaml', 'yml', 'lo
 const HTML_EXTS = new Set(['docx', 'xlsx', 'xls'])
 
 function getExt(fileName: string): string {
-  return path.extname(fileName).slice(1).toLowerCase()
+  return fileName.split('.').pop()?.toLowerCase() ?? ''
 }
 
 type PreviewType = 'pdf' | 'image' | 'video' | 'text' | 'html' | 'none'

@@ -67,14 +67,25 @@ model User {
   departmentRole String?  // LEGAL | INTERNAL_AUDIT | QUALITY | PROCEDURES
   createdAt      DateTime @default(now())
 
-  uploadedDocuments  Document[]         @relation("UploadedBy")
-  originatedDocuments Document[]        @relation("OriginatorOf")
-  authorizedDocuments Document[]        @relation("AuthorizerOf")
-  reviews            DocumentReview[]
-  comments           DocumentComment[]
-  versionUploads     DocumentVersion[]  @relation("VersionUploadedBy")
-  activities         DocumentActivity[] @relation("ActivityUser")
-  notifications      Notification[]
+  uploadedDocuments        Document[]                @relation("UploadedBy")
+  originatedDocuments      Document[]                @relation("OriginatorOf")
+  authorizedDocuments      Document[]                @relation("AuthorizerOf")
+  reviews                  DocumentReview[]
+  comments                 DocumentComment[]
+  versionUploads           DocumentVersion[]         @relation("VersionUploadedBy")
+  activities               DocumentActivity[]        @relation("ActivityUser")
+  notifications            Notification[]
+}
+
+/// Maps a document type to which department/functions are mandatory reviewers.
+/// The actual person is resolved at runtime via User.departmentRole.
+model MandatoryFunctionConfig {
+  id           String   @id @default(cuid())
+  documentType String   // e.g. "Policy", "Procedure"
+  deptRole     String   // LEGAL | INTERNAL_AUDIT | QUALITY | PROCEDURES
+  createdAt    DateTime @default(now())
+
+  @@unique([documentType, deptRole])
 }
 
 model Notification {

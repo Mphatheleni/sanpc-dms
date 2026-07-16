@@ -52,3 +52,9 @@ body {
   outline: 2px solid #1C3557;
   outline-offset: 2px;
 }
+
+/* ─── Mandatory reviewer slide-in animation ───────────────────── */
+@keyframes slideInFromTop {
+  from { opacity: 0; transform: translateY(-12px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0)     scale(1);    }
+}

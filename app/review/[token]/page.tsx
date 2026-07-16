@@ -40,9 +40,10 @@ export default async function ReviewTokenPage({ params }: Props) {
   const review = document.reviews[0]
   if (!review) return <ErrorPage message="Review record not found." />
 
-  const expectedStatus = isApprover ? 'PENDING_APPROVAL' : 'IN_REVIEW'
+  // Approvers are activated when doc is FINAL_DRAFT (advance route); PENDING_APPROVAL is a legacy fallback
+  const expectedStatuses = isApprover ? ['FINAL_DRAFT', 'PENDING_APPROVAL'] : ['IN_REVIEW']
   const alreadyDone = review.status === 'APPROVED' || review.status === 'REJECTED'
-  const wrongStage  = document.status !== expectedStatus && !alreadyDone
+  const wrongStage  = !expectedStatuses.includes(document.status) && !alreadyDone
 
   const overdue      = isReviewOverdue(review.startedAt, review.deadline)
   const deadlineLabel = getDeadlineLabel(review.deadline)

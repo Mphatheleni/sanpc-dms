@@ -73,3 +73,10 @@ env:
       - BUILD
       - RUNTIME
 
+  # Cron job secret — set via: firebase apphosting:secrets:set CRON_SECRET
+  # Then schedule: GET https://<your-app>/api/cron/sla  daily with header x-cron-secret: <value>
+  - variable: CRON_SECRET
+    secret: CRON_SECRET
+    availability:
+      - RUNTIME
+

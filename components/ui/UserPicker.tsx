@@ -21,7 +21,7 @@ interface UserPickerProps {
 
 const roleLabels: Record<string, string> = {
   ADMIN: 'Admin',
-  DOCUMENT_MANAGER: 'PS',
+  DOCUMENT_MANAGER: 'DC',
   REVIEWER: 'Reviewer',
   APPROVER: 'Approver',
 }

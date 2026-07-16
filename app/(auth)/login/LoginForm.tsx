@@ -4,22 +4,32 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 
+const DEMO_ACCOUNTS = [
+  { label: 'Admin',               email: 'admin@sanpc.com',   role: 'ADMIN',            color: '#EF4444', bg: '#FEF2F2' },
+  { label: 'Document Controller', email: 'manager@sanpc.com', role: 'DOCUMENT_MANAGER', color: '#1C3557', bg: '#E8EDF4' },
+  { label: 'Reviewer 1',         email: 'alice@sanpc.com',   role: 'REVIEWER',         color: '#7C3AED', bg: '#F5F3FF' },
+  { label: 'Reviewer 2',         email: 'bob@sanpc.com',     role: 'REVIEWER',         color: '#7C3AED', bg: '#F5F3FF' },
+  { label: 'Approver 1',         email: 'ivy@sanpc.com',     role: 'APPROVER',         color: '#16A34A', bg: '#F0FDF4' },
+  { label: 'Approver 2',         email: 'jack@sanpc.com',    role: 'APPROVER',         color: '#16A34A', bg: '#F0FDF4' },
+]
+
 export default function LoginForm({ entraError }: { entraError?: string }) {
   const router = useRouter()
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [error, setError]       = useState('')
   const [loading, setLoading]   = useState(false)
+  const [demoLoading, setDemoLoading] = useState<string | null>(null)
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  async function signIn(emailVal: string, passwordVal: string, demoKey?: string) {
+    if (demoKey) setDemoLoading(demoKey)
+    else setLoading(true)
     setError('')
-    setLoading(true)
     try {
       const res = await fetch('/api/auth/login', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ email, password }),
+        body:    JSON.stringify({ email: emailVal, password: passwordVal }),
       })
       if (res.ok) {
         router.push('/dashboard')
@@ -30,8 +40,14 @@ export default function LoginForm({ entraError }: { entraError?: string }) {
     } catch {
       setError('Network error — please try again')
     } finally {
+      setDemoLoading(null)
       setLoading(false)
     }
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    signIn(email, password)
   }
 
   const displayError = error || entraError
@@ -80,7 +96,7 @@ export default function LoginForm({ entraError }: { entraError?: string }) {
             </div>
 
             <h1 className="text-2xl font-bold mb-1" style={{ color: '#111827' }}>Welcome back</h1>
-            <p className="text-sm mb-7" style={{ color: '#6B7280' }}>Sign in to continue to your workspace.</p>
+            <p className="text-sm mb-6" style={{ color: '#6B7280' }}>Sign in to continue to your workspace.</p>
 
             {/* Microsoft SSO */}
             <a
@@ -102,8 +118,41 @@ export default function LoginForm({ entraError }: { entraError?: string }) {
                 <div className="w-full border-t border-gray-100" />
               </div>
               <div className="relative flex justify-center">
-                <span className="bg-white px-3 text-xs text-gray-400 tracking-wide">or sign in with password</span>
+                <span className="bg-white px-3 text-xs text-gray-400 tracking-wide">or use a demo account</span>
               </div>
+            </div>
+
+            {/* Demo account quick-login tiles */}
+            <div className="grid grid-cols-2 gap-2 mb-5">
+              {DEMO_ACCOUNTS.map((acc) => {
+                const isLoading = demoLoading === acc.email
+                return (
+                  <button
+                    key={acc.email}
+                    type="button"
+                    disabled={!!demoLoading || loading}
+                    onClick={() => signIn(acc.email, 'password', acc.email)}
+                    className="flex items-center gap-2 rounded-lg border px-3 py-2.5 text-left transition-all hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ borderColor: `${acc.color}30`, backgroundColor: isLoading ? acc.bg : 'white' }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = acc.bg }}
+                    onMouseLeave={(e) => { if (!isLoading) (e.currentTarget as HTMLElement).style.backgroundColor = 'white' }}
+                  >
+                    <div
+                      className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                      style={{ backgroundColor: acc.color }}
+                    >
+                      {isLoading
+                        ? <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                        : acc.label.charAt(0)
+                      }
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-gray-800 truncate leading-tight">{acc.label}</p>
+                      <p className="text-[10px] text-gray-400 truncate leading-tight">{acc.email}</p>
+                    </div>
+                  </button>
+                )
+              })}
             </div>
 
             {/* Error */}
@@ -116,40 +165,38 @@ export default function LoginForm({ entraError }: { entraError?: string }) {
               </div>
             )}
 
-            {/* Form */}
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold tracking-wide text-gray-500 uppercase mb-1.5">
-                  Email address
-                </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  autoComplete="email"
-                  required
-                  placeholder="you@sa-npc.co.za"
-                  className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 transition focus:border-[#1C3557] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1C3557]/10"
-                />
+            {/* Manual email/password form */}
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-100" />
+                </div>
+                <div className="relative flex justify-center mb-3">
+                  <span className="bg-white px-3 text-xs text-gray-400 tracking-wide">or sign in manually</span>
+                </div>
               </div>
-              <div>
-                <label className="block text-xs font-semibold tracking-wide text-gray-500 uppercase mb-1.5">
-                  Password
-                </label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete="current-password"
-                  required
-                  placeholder="••••••••"
-                  className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 transition focus:border-[#1C3557] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1C3557]/10"
-                />
-              </div>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                required
+                placeholder="Email address"
+                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 transition focus:border-[#1C3557] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1C3557]/10"
+              />
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                required
+                placeholder="Password"
+                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 transition focus:border-[#1C3557] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1C3557]/10"
+              />
               <button
                 type="submit"
-                disabled={loading}
-                className="w-full rounded-xl py-2.5 text-sm font-semibold text-white transition-all duration-150 disabled:opacity-50 flex items-center justify-center gap-2 mt-1"
+                disabled={loading || !!demoLoading}
+                className="w-full rounded-xl py-2.5 text-sm font-semibold text-white transition-all duration-150 disabled:opacity-50 flex items-center justify-center gap-2"
                 style={{ background: 'linear-gradient(135deg, #1C3557 0%, #142840 100%)' }}
               >
                 {loading && (

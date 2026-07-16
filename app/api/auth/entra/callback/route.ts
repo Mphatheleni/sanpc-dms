@@ -57,7 +57,12 @@ export async function GET(request: NextRequest) {
     const tokenData = await tokenRes.json()
     if (!tokenData.access_token) {
       console.error('[entra] token exchange failed:', tokenData)
-      return loginRedirect('Token exchange failed — check Azure app configuration.')
+      const desc: string = tokenData.error_description ?? ''
+      // AADSTS50020 / AADSTS700016 / AADSTS500011 = user from wrong tenant or personal account
+      if (/AADSTS(50020|700016|500011|650057)/.test(desc) || desc.toLowerCase().includes('wrong tenant') || tokenData.error === 'invalid_grant') {
+        return loginRedirect('Access denied: you must sign in with your SANPC Microsoft account (@sa-npc.co.za). Personal or external accounts are not permitted.')
+      }
+      return loginRedirect('Microsoft sign-in failed. Please try again or contact your IT administrator.')
     }
     accessToken = tokenData.access_token
   } catch (err) {

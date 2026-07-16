@@ -86,7 +86,11 @@ export async function uploadToSharePoint(
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ item: { '@microsoft.graph.conflictBehavior': 'rename' } }),
   })
-  const { uploadUrl } = await sessionRes.json()
+  const sessionData = await sessionRes.json()
+  if (!sessionRes.ok || !sessionData.uploadUrl) {
+    throw new Error(`SharePoint upload session failed (${sessionRes.status}): ${JSON.stringify(sessionData)}`)
+  }
+  const { uploadUrl } = sessionData
 
   // Upload in 4 MB chunks
   const chunkSize = MB4
@@ -107,6 +111,10 @@ export async function uploadToSharePoint(
       finalItem = await chunkRes.json()
     }
     start = end
+  }
+
+  if (!finalItem.id || !finalItem.webUrl) {
+    throw new Error(`SharePoint large-file upload incomplete — no item returned after all chunks`)
   }
 
   return {

@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import Link from 'next/link'
@@ -11,7 +12,7 @@ interface PageProps {
 
 export default async function DocumentsPage({ searchParams }: PageProps) {
   const session = await getSession()
-  if (!session) return null
+  if (!session) redirect('/login')
 
   const { search = '', status = '', category = '' } = await searchParams
 
@@ -21,7 +22,10 @@ export default async function DocumentsPage({ searchParams }: PageProps) {
   else if (session.role === 'REVIEWER') where.reviews = { some: { reviewerId: session.userId } }
   else if (session.role === 'APPROVER') where.reviews = { some: { reviewerId: session.userId, isApprover: true } }
 
-  if (search) where.OR = [{ title: { contains: search } }, { description: { contains: search } }]
+  if (search) where.OR = [
+    { title: { contains: search, mode: 'insensitive' } },
+    { description: { contains: search, mode: 'insensitive' } },
+  ]
   if (status) where.status = status
   if (category) where.category = category
 

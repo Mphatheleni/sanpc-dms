@@ -89,7 +89,7 @@ export async function GET(req: NextRequest) {
 
   for (const [documentId, revs] of byDoc) {
     const doc = revs[0].document
-    if (doc.status !== 'IN_REVIEW' && doc.status !== 'PENDING_APPROVAL') continue
+    if (doc.status !== 'IN_REVIEW' && doc.status !== 'PENDING_APPROVAL' && doc.status !== 'FINAL_DRAFT') continue
 
     // Mark all timed-out reviews as APPROVED (auto-passed)
     await prisma.documentReview.updateMany({
@@ -126,7 +126,7 @@ export async function GET(req: NextRequest) {
         })
         autoAdvanced++
       }
-    } else if (doc.status === 'PENDING_APPROVAL') {
+    } else if (doc.status === 'PENDING_APPROVAL' || doc.status === 'FINAL_DRAFT') {
       const allApproversDone = allApproverReviews.every(
         (r) => r.status === 'APPROVED' || updatedIds.has(r.id)
       )

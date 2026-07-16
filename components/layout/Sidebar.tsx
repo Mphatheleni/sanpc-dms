@@ -25,7 +25,7 @@ const navItems = [
 
 const roleLabels: Record<string, string> = {
   ADMIN:             'Admin',
-  DOCUMENT_MANAGER:  'Manager',
+  DOCUMENT_MANAGER:  'Document Controller',
   REVIEWER:          'Reviewer',
   APPROVER:          'Approver',
 }

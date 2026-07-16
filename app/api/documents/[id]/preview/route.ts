@@ -126,6 +126,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   if (ext === 'xlsx' || ext === 'xls') {
     const XLSX = await import('xlsx')
     const workbook = XLSX.read(buffer, { type: 'buffer' })
+    if (!workbook.SheetNames.length) {
+      return NextResponse.json({ previewable: false, message: 'Excel file contains no sheets.' })
+    }
     const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
     const html = XLSX.utils.sheet_to_html(firstSheet, { id: 'sheet', editable: false })
     const wrapped = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -35,7 +35,29 @@ export default function DocumentsClient({ documents, canCreate, userId, userRole
   const [view, setView] = useState<'table' | 'grid'>('table')
   const [page, setPage] = useState(1)
   const [openMenu, setOpenMenu] = useState<string | null>(null)
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
+
+  // Close menu on outside click or scroll
+  useEffect(() => {
+    if (!openMenu) return
+    function close() { setOpenMenu(null); setMenuPos(null) }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('scroll', close, true)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('scroll', close, true)
+    }
+  }, [openMenu])
+
+  function toggleMenu(docId: string, e: React.MouseEvent<HTMLButtonElement>) {
+    e.stopPropagation()
+    if (openMenu === docId) { setOpenMenu(null); setMenuPos(null); return }
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+    setOpenMenu(docId)
+  }
 
   const totalPages = Math.max(1, Math.ceil(documents.length / PAGE_SIZE))
   const pageDocs = documents.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -145,44 +167,12 @@ export default function DocumentsClient({ documents, canCreate, userId, userRole
                       <span className="text-xs text-gray-400">{formatDate(doc.updatedAt)}</span>
                     </td>
                     <td className="px-5 py-4" onClick={(e) => e.stopPropagation()}>
-                      <div className="relative">
-                        <button
-                          onClick={() => setOpenMenu(openMenu === doc.id ? null : doc.id)}
-                          className="rounded-md p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-                        >
-                          <MoreHorizontal className="h-4 w-4" />
-                        </button>
-                        {openMenu === doc.id && (
-                          <div className="absolute right-0 top-full mt-1 w-36 rounded-lg border border-gray-200 bg-white shadow-lg z-20 py-1">
-                            <Link
-                              href={`/documents/${doc.id}`}
-                              className="flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 transition-colors"
-                              onClick={() => setOpenMenu(null)}
-                            >
-                              <Eye className="h-3.5 w-3.5" />
-                              View
-                            </Link>
-                            <a
-                              href={`/api/documents/${doc.id}/file`}
-                              download={doc.fileName}
-                              className="flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 transition-colors"
-                              onClick={() => setOpenMenu(null)}
-                            >
-                              <Download className="h-3.5 w-3.5" />
-                              Download
-                            </a>
-                            {canDelete(doc) && (
-                              <button
-                                onClick={(e) => handleDelete(doc, e)}
-                                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50 transition-colors"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                                Delete
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                      <button
+                        onClick={(e) => toggleMenu(doc.id, e)}
+                        className="rounded-md p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -190,6 +180,7 @@ export default function DocumentsClient({ documents, canCreate, userId, userRole
             </table>
           </div>
         </div>
+
       ) : (
         <div className="space-y-3">
           {pageDocs.map((doc) => (
@@ -197,6 +188,47 @@ export default function DocumentsClient({ documents, canCreate, userId, userRole
           ))}
         </div>
       )}
+
+      {/* Fixed-position action menu — escapes overflow:hidden/overflow-x-auto parents */}
+      {openMenu && menuPos && (() => {
+        const doc = pageDocs.find((d) => d.id === openMenu)
+        if (!doc) return null
+        return (
+          <div
+            ref={menuRef}
+            style={{ position: 'fixed', top: menuPos.top, right: menuPos.right, zIndex: 9999 }}
+            className="w-36 rounded-lg border border-gray-200 bg-white shadow-lg py-1"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <Link
+              href={`/documents/${doc.id}`}
+              className="flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 transition-colors"
+              onClick={() => { setOpenMenu(null); setMenuPos(null) }}
+            >
+              <Eye className="h-3.5 w-3.5" />
+              View
+            </Link>
+            <a
+              href={`/api/documents/${doc.id}/file`}
+              download={doc.fileName}
+              className="flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 transition-colors"
+              onClick={() => { setOpenMenu(null); setMenuPos(null) }}
+            >
+              <Download className="h-3.5 w-3.5" />
+              Download
+            </a>
+            {canDelete(doc) && (
+              <button
+                onClick={(e) => handleDelete(doc, e)}
+                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50 transition-colors"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete
+              </button>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Pagination */}
       {totalPages > 1 && (
