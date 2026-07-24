@@ -45,7 +45,8 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
     isUploader &&
     (document.status === 'REGISTERED' || document.status === 'DRAFT' || document.status === 'CHANGES_REQUESTED' || document.status === 'REJECTED') &&
     document.reviews.length > 0
-  const canAdvance   = isUploader && (document.status === 'REVIEW_COMPLETE' || document.status === 'UPDATING')
+  const canAdvance      = isUploader && (document.status === 'REVIEW_COMPLETE' || document.status === 'UPDATING')
+  const canReplaceFile  = isUploader && ['IN_REVIEW', 'FINAL_DRAFT', 'PENDING_APPROVAL'].includes(document.status)
   const canControl   = (session.role === 'ADMIN' || isUploader) && document.status === 'APPROVED' && document.documentTypeCode !== 'PO' && !document.isExcoRequired
   const canExco      = (session.role === 'ADMIN' || isUploader) && document.status === 'APPROVED' && (document.documentTypeCode === 'PO' || document.isExcoRequired)
   const canExcoCtrl  = (session.role === 'ADMIN' || isUploader) && document.status === 'EXCO_PENDING'
@@ -453,7 +454,46 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
     )
   }
 
-  if (!canReview && !canApprove) return null
+  if (!canReview && !canApprove) {
+    if (!canReplaceFile) return null
+    // Uploader visiting while document is under active review or approval
+    return (
+      <div className="rounded-xl border border-amber-300 bg-amber-50 overflow-hidden">
+        <div className="px-5 py-3 flex items-center gap-2 bg-amber-100 border-b border-amber-200">
+          <Upload className="h-4 w-4 text-amber-700" />
+          <span className="font-bold text-amber-800 text-sm">Replace Document File</span>
+        </div>
+        <div className="p-5 space-y-3">
+          <p className="text-sm text-amber-800">
+            If an incorrect version was sent, you can replace the file here.
+            All active reviewers{document.status !== 'IN_REVIEW' ? '/approvers' : ''} will be notified automatically.
+          </p>
+          {error && <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{error}</div>}
+          <div
+            className="flex items-center gap-3 rounded-lg border-2 border-dashed border-amber-300 bg-white px-4 py-3 cursor-pointer hover:border-amber-500 transition-colors"
+            onClick={() => amendRef.current?.click()}
+          >
+            <Upload className="h-4 w-4 text-amber-500 flex-shrink-0" />
+            <span className="text-sm text-gray-500">
+              {amendFile ? amendFile.name : 'Click to select replacement file'}
+            </span>
+          </div>
+          <input
+            ref={amendRef}
+            type="file"
+            className="hidden"
+            onChange={(e) => setAmendFile(e.target.files?.[0] ?? null)}
+          />
+          {amendFile && (
+            <Button onClick={uploadAmendedFile} loading={loading === 'amend'} variant="outline">
+              <Upload className="h-4 w-4" />
+              Upload Replacement
+            </Button>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   // ── Reviewer / Approver: two-step action panel ────────────────────────────
   return (

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { saveFile } from '@/lib/file'
 import { uploadToSharePoint, isSharePointConfigured } from '@/lib/sharepoint'
 import { uploadToGCS, isGCSConfigured } from '@/lib/gcs'
+import { sendDocumentUpdatedEmail } from '@/lib/email'
 import { randomUUID } from 'crypto'
 import path from 'path'
 
@@ -21,7 +22,12 @@ export async function POST(
     select: {
       id: true, title: true, status: true, version: true,
       fileUrl: true, fileName: true, fileType: true, fileSize: true,
-      uploadedById: true,
+      uploadedById: true, sharePointUrl: true,
+      uploadedBy: { select: { name: true } },
+      reviews: {
+        where: { status: 'IN_PROGRESS' },
+        include: { reviewer: { select: { name: true, email: true } } },
+      },
     },
   })
 
@@ -31,8 +37,9 @@ export async function POST(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  if (document.status !== 'UPDATING' && document.status !== 'REVIEW_COMPLETE') {
-    return NextResponse.json({ error: 'File amendment only allowed at UPDATING or REVIEW_COMPLETE status' }, { status: 400 })
+  const allowedStatuses = ['UPDATING', 'REVIEW_COMPLETE', 'IN_REVIEW', 'FINAL_DRAFT', 'PENDING_APPROVAL']
+  if (!allowedStatuses.includes(document.status)) {
+    return NextResponse.json({ error: 'File replacement not allowed at this stage' }, { status: 400 })
   }
 
   const formData = await req.formData()
@@ -119,6 +126,23 @@ export async function POST(
       details: `Uploaded revised document as v${newVersion}: ${file.name}`,
     },
   }).catch(() => {})
+
+  // Notify all active reviewers/approvers that a new version is available
+  if (document.reviews.length > 0) {
+    const appUrl = process.env.APP_URL || 'http://localhost:3000'
+    await Promise.all(
+      document.reviews.map((r) =>
+        sendDocumentUpdatedEmail({
+          toEmail: r.reviewer.email,
+          toName: r.reviewer.name,
+          documentTitle: document.title,
+          documentUrl: `${appUrl}/documents/${id}`,
+          sharePointUrl: newSharePointUrl ?? document.sharePointUrl,
+          uploaderName: document.uploadedBy.name,
+        }).catch((e) => console.error('[amend-file] notification email error:', e))
+      )
+    )
+  }
 
   const updated = await prisma.document.findUnique({
     where: { id },
