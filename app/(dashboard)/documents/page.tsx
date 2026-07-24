@@ -18,9 +18,9 @@ export default async function DocumentsPage({ searchParams }: PageProps) {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const where: any = {}
-  if (session.role === 'DOCUMENT_MANAGER') where.uploadedById = session.userId
-  else if (session.role === 'REVIEWER') where.reviews = { some: { reviewerId: session.userId } }
+  if (session.role === 'REVIEWER') where.reviews = { some: { reviewerId: session.userId } }
   else if (session.role === 'APPROVER') where.reviews = { some: { reviewerId: session.userId, isApprover: true } }
+  // ADMIN and DOCUMENT_MANAGER see all documents
 
   if (search) where.OR = [
     { title: { contains: search, mode: 'insensitive' } },

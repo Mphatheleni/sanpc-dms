@@ -48,7 +48,7 @@ export default async function DashboardPage() {
 
   if (session.role === 'DOCUMENT_MANAGER' || session.role === 'ADMIN') {
     myDocs = await prisma.document.findMany({
-      where: session.role === 'ADMIN' ? {} : { uploadedById: session.userId },
+      where: {},
       orderBy: { updatedAt: 'desc' },
       take: 8,
       select: { id: true, title: true, status: true, updatedAt: true, category: true },
@@ -94,7 +94,7 @@ export default async function DashboardPage() {
   }
 
   // Stats
-  const scopeWhere = session.role === 'ADMIN' ? {} : { uploadedById: session.userId }
+  const scopeWhere = (session.role === 'ADMIN' || session.role === 'DOCUMENT_MANAGER') ? {} : { uploadedById: session.userId }
   const totalDocs = await prisma.document.count({ where: scopeWhere })
   const approvedDocs = await prisma.document.count({ where: { ...scopeWhere, status: 'APPROVED' } })
 
@@ -121,7 +121,7 @@ export default async function DashboardPage() {
     'Strategy & Planning', 'Risk Matrix', 'Standard', 'Guidelines',
     'Training Material', 'Form / Template',
   ]
-  const categoryScope = session.role === 'ADMIN' ? {} : { uploadedById: session.userId }
+  const categoryScope = (session.role === 'ADMIN' || session.role === 'DOCUMENT_MANAGER') ? {} : { uploadedById: session.userId }
   const categoryCounts = await Promise.all(
     docTypeCategories.map(async (cat) => ({
       category: cat,
