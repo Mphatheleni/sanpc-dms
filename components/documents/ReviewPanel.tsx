@@ -43,10 +43,11 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
   const canApprove = !!myActiveApproval && (document.status === 'PENDING_APPROVAL' || document.status === 'FINAL_DRAFT')
   const canSubmit  =
     isUploader &&
-    (document.status === 'REGISTERED' || document.status === 'DRAFT' || document.status === 'CHANGES_REQUESTED' || document.status === 'REJECTED') &&
+    (document.status === 'REGISTERED' || document.status === 'DRAFT' || document.status === 'CHANGES_REQUESTED') &&
     document.reviews.length > 0
+  const canResubmitForApproval = isUploader && document.status === 'REJECTED' && document.reviews.some((r) => r.isApprover)
   const canAdvance      = isUploader && (document.status === 'REVIEW_COMPLETE' || document.status === 'UPDATING')
-  const canReplaceFile  = isUploader && ['IN_REVIEW', 'FINAL_DRAFT', 'PENDING_APPROVAL'].includes(document.status)
+  const canReplaceFile  = isUploader && ['IN_REVIEW', 'FINAL_DRAFT', 'PENDING_APPROVAL', 'REJECTED', 'CHANGES_REQUESTED'].includes(document.status)
   const canControl   = (session.role === 'ADMIN' || isUploader) && document.status === 'APPROVED' && document.documentTypeCode !== 'PO' && !document.isExcoRequired
   const canExco      = (session.role === 'ADMIN' || isUploader) && document.status === 'APPROVED' && (document.documentTypeCode === 'PO' || document.isExcoRequired)
   const canExcoCtrl  = (session.role === 'ADMIN' || isUploader) && document.status === 'EXCO_PENDING'
@@ -113,6 +114,15 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
       fd.append('file', amendFile)
       const res = await fetch(`/api/documents/${document.id}/amend-file`, { method: 'POST', body: fd })
       if (res.ok) { onUpdate(await res.json()); setAmendFile(null) }
+      else { const d = await res.json().catch(() => ({})); setError(d.error || `Error ${res.status}`) }
+    } finally { setLoading(null) }
+  }
+
+  async function resubmitForApproval() {
+    setLoading('resubmit'); setError(null)
+    try {
+      const res = await fetch(`/api/documents/${document.id}/resubmit-for-approval`, { method: 'POST' })
+      if (res.ok) { onUpdate(await res.json()) }
       else { const d = await res.json().catch(() => ({})); setError(d.error || `Error ${res.status}`) }
     } finally { setLoading(null) }
   }
@@ -213,6 +223,59 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
             <Button onClick={advanceToApproval} loading={loading === 'advance'}>
               <Send className="h-4 w-4" />
               Send Final Draft for Approval
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── REJECTED: replace file + send back for approval only ─────────────────
+  if (canResubmitForApproval) {
+    return (
+      <div className="rounded-xl border-2 overflow-hidden" style={{ borderColor: '#DC2626' }}>
+        <div className="px-5 py-3 flex items-center gap-2" style={{ backgroundColor: '#DC2626' }}>
+          <XCircle className="h-5 w-5 text-white" />
+          <span className="font-bold text-white text-sm">Document Rejected — Action Required</span>
+        </div>
+        <div className="p-5 bg-white space-y-4">
+          <p className="text-sm text-gray-600">
+            This document was rejected. Obtain the revised version from the Originator, upload it below,
+            then send it directly for re-approval. <strong>It will not go back through the review stage.</strong>
+          </p>
+          {error && <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{error}</div>}
+
+          {/* Replace file (optional — originator may have updated directly in SharePoint) */}
+          <div className="rounded-lg border border-gray-200 p-4 space-y-3">
+            <p className="text-sm font-medium text-gray-700">Upload Revised Document (from Originator)</p>
+            <div
+              className="flex items-center gap-3 rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 px-4 py-3 cursor-pointer hover:border-red-400 transition-colors"
+              onClick={() => amendRef.current?.click()}
+            >
+              <Upload className="h-4 w-4 text-gray-400 flex-shrink-0" />
+              <span className="text-sm text-gray-500">
+                {amendFile ? amendFile.name : 'Click to select revised document (optional)'}
+              </span>
+            </div>
+            <input
+              ref={amendRef}
+              type="file"
+              className="hidden"
+              onChange={(e) => setAmendFile(e.target.files?.[0] ?? null)}
+            />
+            {amendFile && (
+              <Button onClick={uploadAmendedFile} loading={loading === 'amend'} variant="outline">
+                <Upload className="h-4 w-4" />
+                Upload Revised Document
+              </Button>
+            )}
+          </div>
+
+          <div className="border-t pt-4">
+            <p className="text-sm font-medium text-gray-700 mb-3">When ready, send back to approvers:</p>
+            <Button onClick={resubmitForApproval} loading={loading === 'resubmit'}>
+              <Send className="h-4 w-4" />
+              Send for Re-Approval
             </Button>
           </div>
         </div>

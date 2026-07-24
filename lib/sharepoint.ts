@@ -148,6 +148,68 @@ export async function getEditLink(itemId: string): Promise<string> {
   }
 }
 
+/**
+ * Replace the content of an existing SharePoint item in-place.
+ * Keeps the same item ID and webUrl — old links remain valid and show the new content.
+ */
+export async function replaceFileInSharePoint(
+  itemId: string,
+  buffer: Buffer,
+  mimeType: string,
+): Promise<{ webUrl: string }> {
+  const token = await getToken()
+  const siteId = process.env.SHAREPOINT_SITE_ID!
+  const driveId = process.env.SHAREPOINT_DRIVE_ID!
+  const MB4 = 4 * 1024 * 1024
+
+  if (buffer.length <= MB4) {
+    const url = `${GRAPH}/sites/${siteId}/drives/${driveId}/items/${itemId}/content`
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': mimeType },
+      body: buffer as unknown as BodyInit,
+    })
+    const item = await res.json()
+    if (!res.ok) throw new Error(`SharePoint in-place replace failed (${res.status}): ${JSON.stringify(item)}`)
+    return { webUrl: item.webUrl }
+  }
+
+  // Large file: create upload session on the existing item
+  const sessionUrl = `${GRAPH}/sites/${siteId}/drives/${driveId}/items/${itemId}/createUploadSession`
+  const sessionRes = await fetch(sessionUrl, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ item: {} }),
+  })
+  const sessionData = await sessionRes.json()
+  if (!sessionRes.ok || !sessionData.uploadUrl) {
+    throw new Error(`SharePoint replace session failed (${sessionRes.status}): ${JSON.stringify(sessionData)}`)
+  }
+
+  const chunkSize = MB4
+  let start = 0
+  let finalItem: Record<string, unknown> = {}
+  while (start < buffer.length) {
+    const end = Math.min(start + chunkSize, buffer.length)
+    const chunk = buffer.slice(start, end)
+    const chunkRes = await fetch(sessionData.uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Length': `${chunk.length}`,
+        'Content-Range': `bytes ${start}-${end - 1}/${buffer.length}`,
+      },
+      body: chunk,
+    })
+    if (chunkRes.status === 200 || chunkRes.status === 201) {
+      finalItem = await chunkRes.json()
+    }
+    start = end
+  }
+
+  if (!finalItem.webUrl) throw new Error('SharePoint large-file replace: no webUrl after upload')
+  return { webUrl: finalItem.webUrl as string }
+}
+
 /** Stream a file from SharePoint by item ID. Returns a Response-compatible body. */
 export async function downloadFromSharePoint(itemId: string): Promise<{ body: ReadableStream; contentType: string }> {
   const token = await getToken()

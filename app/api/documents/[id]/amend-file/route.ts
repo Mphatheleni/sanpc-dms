@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { saveFile } from '@/lib/file'
-import { uploadToSharePoint, isSharePointConfigured } from '@/lib/sharepoint'
+import { uploadToSharePoint, replaceFileInSharePoint, isSharePointConfigured } from '@/lib/sharepoint'
 import { uploadToGCS, isGCSConfigured } from '@/lib/gcs'
 import { sendDocumentUpdatedEmail } from '@/lib/email'
 import { randomUUID } from 'crypto'
@@ -37,7 +37,7 @@ export async function POST(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const allowedStatuses = ['UPDATING', 'REVIEW_COMPLETE', 'IN_REVIEW', 'FINAL_DRAFT', 'PENDING_APPROVAL']
+  const allowedStatuses = ['UPDATING', 'REVIEW_COMPLETE', 'IN_REVIEW', 'FINAL_DRAFT', 'PENDING_APPROVAL', 'REJECTED', 'CHANGES_REQUESTED']
   if (!allowedStatuses.includes(document.status)) {
     return NextResponse.json({ error: 'File replacement not allowed at this stage' }, { status: 400 })
   }
@@ -70,15 +70,25 @@ export async function POST(
   let uploaded = false
 
   if (isSharePointConfigured()) {
+    // Prefer in-place update — keeps the same SharePoint URL so old email links stay valid
     try {
-      const result = await uploadToSharePoint(uniqueName, buffer, mimeType)
-      if (result.itemId && result.webUrl) {
-        storedName = result.itemId
-        newSharePointUrl = result.webUrl
-        uploaded = true
+      await replaceFileInSharePoint(document.fileUrl, buffer, mimeType)
+      storedName = document.fileUrl  // item ID unchanged
+      // sharePointUrl unchanged — old links continue to work
+      uploaded = true
+    } catch {
+      // fileUrl may not be a SharePoint item ID (e.g. doc uploaded before SharePoint was configured)
+      // Fall back to uploading a new file
+      try {
+        const result = await uploadToSharePoint(file.name || uniqueName, buffer, mimeType)
+        if (result.itemId && result.webUrl) {
+          storedName = result.itemId
+          newSharePointUrl = result.webUrl
+          uploaded = true
+        }
+      } catch (err) {
+        console.error('[amend-file] SharePoint error:', err)
       }
-    } catch (err) {
-      console.error('[amend-file] SharePoint error:', err)
     }
   }
 
