@@ -34,10 +34,8 @@ export default function MandatoryReviewersConfig({ initialConfigs, users }: Prop
 
   const reviewersForType = configs.filter((c) => c.documentType === selectedType)
   const assignedUserIds = new Set(reviewersForType.map((c) => c.userId))
-  // Only show reviewers/admins in the picker, exclude already-assigned ones
-  const availableUsers = users.filter(
-    (u) => (u.role === 'REVIEWER' || u.role === 'ADMIN') && !assignedUserIds.has(u.id)
-  )
+  // Show all users in the picker, exclude already-assigned ones
+  const availableUsers = users.filter((u) => !assignedUserIds.has(u.id))
 
   async function addReviewer(user: PickableUser) {
     setSaving(true)

@@ -39,7 +39,7 @@ const reviewStatusIcon: Record<string, React.ReactNode> = {
   CHANGES_REQUESTED: <XCircle className="h-4 w-4 text-yellow-500" />,
 }
 
-const TABS = ['Overview', 'Workflow', 'Comments', 'History'] as const
+const TABS = ['Overview', 'Reviewer Comments', 'Workflow', 'History'] as const
 type Tab = typeof TABS[number]
 
 interface UserOption { id: string; name: string; email: string; role: string }
@@ -52,6 +52,11 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
   const [replaceTarget, setReplaceTarget] = useState<{ reviewId: string; isApprover: boolean } | null>(null)
   const [replaceUserId, setReplaceUserId] = useState('')
   const [replacing, setReplacing] = useState(false)
+  const [addTarget, setAddTarget] = useState<{ isApprover: boolean } | null>(null)
+  const [addUserId, setAddUserId] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [removeTarget, setRemoveTarget] = useState<string | null>(null)
+  const [removing, setRemoving] = useState(false)
   const [activeTab, setActiveTab] = useState<Tab>('Overview')
 
   const canManage =
@@ -76,6 +81,44 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
       }
     } finally {
       setReplacing(false)
+    }
+  }
+
+  async function handleAddReviewer() {
+    if (!addTarget || !addUserId) return
+    setAdding(true)
+    try {
+      const res = await fetch(`/api/documents/${doc.id}/add-reviewer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newReviewerId: addUserId, isApprover: addTarget.isApprover }),
+      })
+      if (res.ok) {
+        const updated = await res.json()
+        setDoc({ ...updated, versions: doc.versions, activities: doc.activities })
+        setAddTarget(null)
+        setAddUserId('')
+      }
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  async function handleRemoveReviewer(reviewId: string) {
+    setRemoving(true)
+    try {
+      const res = await fetch(`/api/documents/${doc.id}/remove-reviewer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reviewId }),
+      })
+      if (res.ok) {
+        const updated = await res.json()
+        setDoc({ ...updated, versions: doc.versions, activities: doc.activities })
+        setRemoveTarget(null)
+      }
+    } finally {
+      setRemoving(false)
     }
   }
 
@@ -167,21 +210,32 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
                           : <StatusBadge status={review.status} />
                         }
                         {canManage && isActive && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (replaceTarget?.reviewId === review.id) {
-                                setReplaceTarget(null); setReplaceUserId('')
-                              } else {
-                                setReplaceTarget({ reviewId: review.id, isApprover: isApproverGroup })
-                                setReplaceUserId('')
-                              }
-                            }}
-                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 transition-colors"
-                          >
-                            <UserCheck className="h-3 w-3" />
-                            Replace
-                          </button>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (replaceTarget?.reviewId === review.id) {
+                                  setReplaceTarget(null); setReplaceUserId('')
+                                } else {
+                                  setReplaceTarget({ reviewId: review.id, isApprover: isApproverGroup })
+                                  setReplaceUserId('')
+                                  setRemoveTarget(null)
+                                }
+                              }}
+                              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 transition-colors"
+                            >
+                              <UserCheck className="h-3 w-3" />
+                              Replace
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setRemoveTarget(removeTarget === review.id ? null : review.id)}
+                              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 transition-colors"
+                            >
+                              <X className="h-3 w-3" />
+                              Remove
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -230,10 +284,85 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
                     </div>
                   )
                 })()}
+
+                {/* S10: Remove confirmation */}
+                {removeTarget === review.id && (
+                  <div className="border-t border-red-200 bg-red-50 px-3 py-3 flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-semibold text-red-800 flex-1">Remove {review.reviewer.name} from workflow?</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveReviewer(review.id)}
+                      disabled={removing}
+                      className="rounded-md px-3 py-1 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 transition-colors"
+                    >
+                      {removing ? 'Removing…' : 'Confirm Remove'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRemoveTarget(null)}
+                      className="rounded-md p-1 text-red-600 hover:bg-red-100 transition-colors"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
               </div>
             )
           })}
         </div>
+
+        {/* S9: Add reviewer/approver panel */}
+        {canManage && (
+          <div className="mt-3">
+            {addTarget?.isApprover === isApproverGroup ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 flex items-center gap-2 flex-wrap">
+                <UserCheck className="h-4 w-4 text-amber-600 flex-shrink-0" />
+                <span className="text-xs font-semibold text-amber-800">Add {isApproverGroup ? 'approver' : 'reviewer'}:</span>
+                <select
+                  value={addUserId}
+                  onChange={(e) => setAddUserId(e.target.value)}
+                  className="flex-1 min-w-[180px] rounded-md border border-amber-300 bg-white px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400"
+                >
+                  <option value="">— Select person —</option>
+                  {users
+                    .filter((u) => {
+                      const roleOk = isApproverGroup
+                        ? u.role === 'APPROVER' || u.role === 'ADMIN'
+                        : u.role === 'REVIEWER' || u.role === 'ADMIN' || u.role === 'DOCUMENT_MANAGER'
+                      return roleOk && !doc.reviews.some((r) => r.reviewerId === u.id)
+                    })
+                    .map((u) => (
+                      <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
+                    ))
+                  }
+                </select>
+                <button
+                  type="button"
+                  onClick={handleAddReviewer}
+                  disabled={!addUserId || adding}
+                  className="rounded-md px-3 py-1 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-50 transition-colors"
+                >
+                  {adding ? 'Adding…' : 'Add'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setAddTarget(null); setAddUserId('') }}
+                  className="rounded-md p-1 text-amber-600 hover:bg-amber-100 transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => { setAddTarget({ isApprover: isApproverGroup }); setReplaceTarget(null); setRemoveTarget(null) }}
+                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-gray-600 bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors"
+              >
+                + Add {isApproverGroup ? 'approver' : 'reviewer'}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     )
   }
@@ -243,8 +372,8 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
 
   const tabLabels: Record<Tab, string> = {
     Overview: 'Overview',
+    'Reviewer Comments': comments.length > 0 ? `Reviewer Comments (${comments.length})` : 'Reviewer Comments',
     Workflow: doc.reviews.length > 0 ? `Workflow (${doc.reviews.length})` : 'Workflow',
-    Comments: comments.length > 0 ? `Comments (${comments.length})` : 'Comments',
     History: 'History',
   }
 
@@ -309,7 +438,7 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
       </div>
 
       {/* Overview */}
-      {activeTab === 'Overview' && (
+      <div className={activeTab !== 'Overview' ? 'hidden' : ''}>
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2">
             <DocumentViewer documentId={doc.id} fileName={doc.fileName} fileType={doc.fileType} />
@@ -508,7 +637,7 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
             )}
           </div>
         </div>
-      )}
+      </div>
 
       {/* Workflow */}
       {activeTab === 'Workflow' && (
@@ -531,6 +660,18 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
+                    {/* S13: Originator row */}
+                    {doc.originatorUser && (
+                      <tr className="bg-gray-50/50">
+                        <td className="py-2 pr-4 text-gray-400 text-xs">—</td>
+                        <td className="py-2 pr-4 font-medium text-gray-800">{doc.originatorUser.name}</td>
+                        <td className="py-2 pr-4 text-gray-500 text-xs">Originator</td>
+                        <td className="py-2 pr-4">
+                          <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-500">—</span>
+                        </td>
+                        <td className="py-2 text-gray-400 text-xs">—</td>
+                      </tr>
+                    )}
                     {doc.reviews.map((r, i) => (
                       <tr key={r.id} className="hover:bg-gray-50">
                         <td className="py-2 pr-4 text-gray-400 text-xs">{i + 1}</td>
@@ -582,10 +723,10 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
         </div>
       )}
 
-      {/* Comments */}
-      {activeTab === 'Comments' && (
+      {/* Reviewer Comments */}
+      {activeTab === 'Reviewer Comments' && (
         <Card>
-          <h2 className="font-semibold text-gray-800 mb-4">Comments</h2>
+          <h2 className="font-semibold text-gray-800 mb-4">Reviewer Comments</h2>
           <CommentThread documentId={doc.id} comments={comments} onCommentAdded={handleCommentAdded} />
         </Card>
       )}

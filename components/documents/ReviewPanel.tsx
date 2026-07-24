@@ -19,15 +19,16 @@ interface ReviewPanelProps {
 
 export default function ReviewPanel({ document, session, onUpdate }: ReviewPanelProps) {
   const [comments, setComments] = useState('')
+  const [reviewDecision, setReviewDecision] = useState('')
   const [loading, setLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [signFile, setSignFile] = useState<File | null>(null)
   const [excoFile, setExcoFile] = useState<File | null>(null)
+  const [amendFile, setAmendFile] = useState<File | null>(null)
   const signRef = useRef<HTMLInputElement>(null)
   const excoRef = useRef<HTMLInputElement>(null)
+  const amendRef = useRef<HTMLInputElement>(null)
 
-  const isReviewerRole = session.role === 'REVIEWER' || session.role === 'ADMIN'
-  const isApproverRole = session.role === 'APPROVER' || session.role === 'ADMIN'
   const isUploader    = document.uploadedById === session.userId || session.role === 'ADMIN'
 
   const myActiveReview = document.reviews.find(
@@ -37,8 +38,9 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
     (r) => r.isApprover && r.reviewerId === session.userId && r.status === 'IN_PROGRESS'
   )
 
-  const canReview  = isReviewerRole && !!myActiveReview   && document.status === 'IN_REVIEW'
-  const canApprove = isApproverRole && !!myActiveApproval && (document.status === 'PENDING_APPROVAL' || document.status === 'FINAL_DRAFT')
+  // Any user assigned an active review/approval can act on it — role gates are enforced at assignment time
+  const canReview  = !!myActiveReview   && document.status === 'IN_REVIEW'
+  const canApprove = !!myActiveApproval && (document.status === 'PENDING_APPROVAL' || document.status === 'FINAL_DRAFT')
   const canSubmit  =
     isUploader &&
     (document.status === 'REGISTERED' || document.status === 'DRAFT' || document.status === 'CHANGES_REQUESTED' || document.status === 'REJECTED') &&
@@ -57,15 +59,16 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
   const deadlineLabel = getDeadlineLabel(deadline)
   const isApproverAction = canApprove && !canReview
 
-  async function submitReview(decision: string) {
+  async function submitReview(decision: string, commentsOverride?: string) {
     setLoading(decision); setError(null)
+    const body = commentsOverride ?? comments
     try {
       const res = await fetch(`/api/documents/${document.id}/review`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision, comments }),
+        body: JSON.stringify({ decision, comments: body }),
       })
-      if (res.ok) { onUpdate(await res.json()); setComments('') }
+      if (res.ok) { onUpdate(await res.json()); setComments(''); setReviewDecision('') }
       else { const d = await res.json().catch(() => ({})); setError(d.error || `Error ${res.status}`) }
     } finally { setLoading(null) }
   }
@@ -97,6 +100,18 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
     try {
       const res = await fetch(`/api/documents/${document.id}/advance`, { method: 'POST' })
       if (res.ok) { onUpdate(await res.json()) }
+      else { const d = await res.json().catch(() => ({})); setError(d.error || `Error ${res.status}`) }
+    } finally { setLoading(null) }
+  }
+
+  async function uploadAmendedFile() {
+    if (!amendFile) return
+    setLoading('amend'); setError(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', amendFile)
+      const res = await fetch(`/api/documents/${document.id}/amend-file`, { method: 'POST', body: fd })
+      if (res.ok) { onUpdate(await res.json()); setAmendFile(null) }
       else { const d = await res.json().catch(() => ({})); setError(d.error || `Error ${res.status}`) }
     } finally { setLoading(null) }
   }
@@ -165,6 +180,33 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
             upload it as a new version below, then send the Final Draft for approval.
           </p>
           {error && <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{error}</div>}
+
+          {/* S15: Upload revised document from Originator */}
+          <div className="rounded-lg border border-gray-200 p-4 space-y-3">
+            <p className="text-sm font-medium text-gray-700">Upload Revised Document (from Originator)</p>
+            <div
+              className="flex items-center gap-3 rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 px-4 py-3 cursor-pointer hover:border-sanpc-navy transition-colors"
+              onClick={() => amendRef.current?.click()}
+            >
+              <Upload className="h-4 w-4 text-gray-400 flex-shrink-0" />
+              <span className="text-sm text-gray-500">
+                {amendFile ? amendFile.name : 'Click to select revised document'}
+              </span>
+            </div>
+            <input
+              ref={amendRef}
+              type="file"
+              className="hidden"
+              onChange={(e) => setAmendFile(e.target.files?.[0] ?? null)}
+            />
+            {amendFile && (
+              <Button onClick={uploadAmendedFile} loading={loading === 'amend'} variant="outline">
+                <Upload className="h-4 w-4" />
+                Upload New Version
+              </Button>
+            )}
+          </div>
+
           <div className="border-t pt-4">
             <p className="text-sm font-medium text-gray-700 mb-3">When the final version is ready, send for approval:</p>
             <Button onClick={advanceToApproval} loading={loading === 'advance'}>
@@ -456,26 +498,53 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
 
           {error && <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{error}</div>}
 
-          <Textarea
-            label={isApproverAction ? 'Decision comments (optional)' : 'Review notes (required)'}
-            value={comments}
-            onChange={(e) => setComments(e.target.value)}
-            rows={3}
-            placeholder={
-              isApproverAction
-                ? 'Add approval notes or reason for rejection…'
-                : 'Summarise your findings, issues found, or reason for your decision…'
-            }
-          />
+          {/* S7: Reviewer gets structured dropdown; approvers keep free-text */}
+          {canReview && !isApproverAction ? (
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">Reviewer comments (required)</label>
+                <select
+                  value={reviewDecision}
+                  onChange={(e) => setReviewDecision(e.target.value)}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sanpc-navy focus:outline-none focus:ring-1 focus:ring-sanpc-navy"
+                >
+                  <option value="">— Select a decision —</option>
+                  <option value="No comment — document reviewed as submitted">No comment — document reviewed as submitted</option>
+                  <option value="Reviewed and accepted with minor corrections">Reviewed and accepted with minor corrections</option>
+                  <option value="Changes required — see annotations in document">Changes required — see annotations in document</option>
+                  <option value="Significant revision required — see notes below">Significant revision required — see notes below</option>
+                  <option value="Other — specify below">Other — specify below</option>
+                </select>
+              </div>
+              {['Changes required — see annotations in document', 'Significant revision required — see notes below', 'Other — specify below'].includes(reviewDecision) && (
+                <Textarea
+                  label="Additional notes"
+                  value={comments}
+                  onChange={(e) => setComments(e.target.value)}
+                  rows={3}
+                  placeholder="Provide further detail…"
+                />
+              )}
+            </div>
+          ) : (
+            <Textarea
+              label="Decision comments (optional)"
+              value={comments}
+              onChange={(e) => setComments(e.target.value)}
+              rows={3}
+              placeholder="Add approval notes or reason for rejection…"
+            />
+          )}
 
           <div>
             {canReview && (
               <div className="space-y-3">
                 <button
                   onClick={() => {
-                    if (!comments.trim()) { setError('Review notes are required before marking complete.'); return }
+                    if (!reviewDecision) { setError('Please select a decision before marking complete.'); return }
                     setError(null)
-                    submitReview('APPROVED')
+                    const combined = reviewDecision + (comments.trim() ? ': ' + comments.trim() : '')
+                    submitReview('APPROVED', combined)
                   }}
                   disabled={!!loading}
                   className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-bold text-white transition-all disabled:opacity-60 hover:opacity-90"
@@ -485,7 +554,7 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
                   {loading === 'APPROVED' ? 'Submitting…' : 'Mark as Complete'}
                 </button>
                 <p className="text-[11px] text-gray-400">
-                  Review the document above, add your notes, then mark your review as complete.
+                  Review the document above, select your decision, then mark your review as complete.
                 </p>
               </div>
             )}

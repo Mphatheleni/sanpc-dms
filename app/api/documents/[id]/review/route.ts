@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { calcDeadline } from '@/lib/sla'
-import { sendBulkReviewNotifications, sendOriginatorNotification } from '@/lib/email'
+import { sendOriginatorNotification } from '@/lib/email'
 import { createNotification } from '@/lib/notify'
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -22,6 +22,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       id: true, title: true, status: true,
       sharePointUrl: true, reviewDeadlineDays: true,
       uploadedBy: { select: { id: true, name: true, email: true } },
+      originatorUser: { select: { id: true, name: true, email: true } },
       reviews: {
         include: { reviewer: { select: { id: true, name: true, email: true } } },
         orderBy: { order: 'asc' },
@@ -91,15 +92,34 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         id,
       )
       const appUrl = process.env.APP_URL || 'http://localhost:3000'
-      sendOriginatorNotification({
-        toEmail: document.uploadedBy.email,
-        toName: document.uploadedBy.name,
-        documentTitle: document.title,
-        documentUrl: `${appUrl}/documents/${id}`,
-        outcome: 'REVIEW_COMPLETE' as never,
-        reviewerName: session.name,
-        reviewerComments: comments || null,
-      }).catch(() => {})
+      // Build list of notifications to send (uploader + optional originator)
+      const reviewCompleteEmails: Promise<void>[] = [
+        sendOriginatorNotification({
+          toEmail: document.uploadedBy.email,
+          toName: document.uploadedBy.name,
+          documentTitle: document.title,
+          documentUrl: `${appUrl}/documents/${id}`,
+          outcome: 'REVIEW_COMPLETE' as never,
+          reviewerName: session.name,
+          reviewerComments: comments || null,
+        }),
+      ]
+      // S13/S14: Also notify the originator if they differ from the uploader
+      if (document.originatorUser && document.originatorUser.id !== document.uploadedBy.id) {
+        reviewCompleteEmails.push(
+          sendOriginatorNotification({
+            toEmail: document.originatorUser.email,
+            toName: document.originatorUser.name,
+            documentTitle: document.title,
+            documentUrl: `${appUrl}/documents/${id}`,
+            outcome: 'REVIEW_COMPLETE' as never,
+            reviewerName: session.name,
+            reviewerComments: comments || null,
+          })
+        )
+      }
+      // Await all — Cloud Run would kill fire-and-forget before completion
+      await Promise.all(reviewCompleteEmails.map((p) => p.catch((e) => console.error('[review] review-complete email error:', e))))
     }
     // else: other reviewers are still reviewing — no document status change yet
   } else {
@@ -127,15 +147,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       id,
     )
     const appUrl = process.env.APP_URL || 'http://localhost:3000'
-    sendOriginatorNotification({
-      toEmail: document.uploadedBy.email,
-      toName: document.uploadedBy.name,
-      documentTitle: document.title,
-      documentUrl: `${appUrl}/documents/${id}`,
-      outcome: decision === 'REJECTED' ? 'REJECTED' : 'CHANGES_REQUESTED',
-      reviewerName: session.name,
-      reviewerComments: comments || null,
-    }).catch(() => {})
+    try {
+      await sendOriginatorNotification({
+        toEmail: document.uploadedBy.email,
+        toName: document.uploadedBy.name,
+        documentTitle: document.title,
+        documentUrl: `${appUrl}/documents/${id}`,
+        outcome: decision === 'REJECTED' ? 'REJECTED' : 'CHANGES_REQUESTED',
+        reviewerName: session.name,
+        reviewerComments: comments || null,
+      })
+    } catch (err) {
+      console.error('[review] originator email error:', err)
+    }
   }
 
   prisma.documentActivity.create({

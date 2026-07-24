@@ -44,6 +44,7 @@ export default async function DashboardPage() {
 
   let myDocs: { id: string; title: string; status: DocumentStatus; updatedAt: Date; category: string | null }[] = []
   let pendingAction: { id: string; title: string; status: DocumentStatus; updatedAt: Date }[] = []
+  let completedReviews: { id: string; document: { id: string; title: string; status: DocumentStatus; updatedAt: Date }; reviewedAt: Date | null }[] = []
 
   if (session.role === 'DOCUMENT_MANAGER' || session.role === 'ADMIN') {
     myDocs = await prisma.document.findMany({
@@ -77,6 +78,19 @@ export default async function DashboardPage() {
       select: { id: true, title: true, status: true, updatedAt: true },
     }) as typeof pendingAction
     pendingAction = [...pendingAction, ...approverDocs]
+  }
+
+  // S18: Completed review/approval actions for reviewer/approver roles
+  if (session.role === 'REVIEWER' || session.role === 'APPROVER' || session.role === 'ADMIN') {
+    completedReviews = await prisma.documentReview.findMany({
+      where: {
+        reviewerId: session.userId,
+        status: { in: ['APPROVED', 'REJECTED', 'CHANGES_REQUESTED'] },
+      },
+      include: { document: { select: { id: true, title: true, status: true, updatedAt: true } } },
+      orderBy: { reviewedAt: 'desc' },
+      take: 6,
+    }) as typeof completedReviews
   }
 
   // Stats
@@ -218,6 +232,37 @@ export default async function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* S18: Recently Completed Reviews */}
+      {completedReviews.length > 0 && (
+        <div className="rounded-xl border border-gray-100 bg-white shadow-sm p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-semibold text-gray-800 flex items-center gap-2">
+              <CheckCircle className="h-4 w-4 text-green-500" />
+              Recently Completed
+            </h2>
+            <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
+              {completedReviews.length} action{completedReviews.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {completedReviews.map((review) => (
+              <Link key={review.id} href={`/documents/${review.document.id}`}>
+                <div className="flex items-center justify-between rounded-lg border border-gray-100 p-3 hover:border-green-200 hover:bg-green-50/50 transition-all group">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-gray-800 truncate">{review.document.title}</p>
+                    <p className="text-xs text-gray-400">{review.reviewedAt ? formatDate(new Date(review.reviewedAt)) : formatDate(review.document.updatedAt)}</p>
+                  </div>
+                  <div className="flex items-center gap-2 ml-3 flex-shrink-0">
+                    <StatusBadge status={review.document.status} />
+                    <ArrowRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-green-500 transition-colors" />
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Document Type Breakdown */}
       {nonZeroCategories.length > 0 && (

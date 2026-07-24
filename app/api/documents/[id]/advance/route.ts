@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { calcDeadline } from '@/lib/sla'
-import { sendBulkReviewNotifications } from '@/lib/email'
+import { sendBulkReviewNotificationsAsync, sendDocControllerNotification } from '@/lib/email'
 import { signReviewToken } from '@/lib/reviewToken'
 import { createNotification } from '@/lib/notify'
 
@@ -21,7 +21,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     select: {
       id: true, title: true, status: true,
       uploadedById: true, sharePointUrl: true, reviewDeadlineDays: true,
-      uploadedBy: { select: { name: true } },
+      uploadedBy: { select: { name: true, email: true } },
       reviews: {
         include: { reviewer: { select: { id: true, name: true, email: true } } },
         orderBy: { order: 'asc' },
@@ -71,29 +71,48 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       )
     })
 
-    // Notify all approvers with signed token links
+    // Email all approvers — awaited so Cloud Run doesn't cut it short
     const appUrl = process.env.APP_URL || 'http://localhost:3000'
-    Promise.all(
-      approverReviews.map(async (r) => {
-        const reviewToken = await signReviewToken({
-          documentId: id,
-          reviewId: r.id,
-          reviewerId: r.reviewer.id,
-          isApprover: true,
+    try {
+      const notifications = await Promise.all(
+        approverReviews.map(async (r) => {
+          const reviewToken = await signReviewToken({
+            documentId: id,
+            reviewId: r.id,
+            reviewerId: r.reviewer.id,
+            isApprover: true,
+          })
+          return {
+            toEmail: r.reviewer.email,
+            toName: r.reviewer.name,
+            documentTitle: document.title,
+            documentUrl: `${appUrl}/documents/${id}`,
+            reviewUrl: `${appUrl}/review/${reviewToken}`,
+            sharePointUrl: document.sharePointUrl,
+            deadline: deadline?.toISOString() ?? null,
+            isApprover: true,
+            uploaderName: document.uploadedBy.name,
+          }
         })
-        return {
-          toEmail: r.reviewer.email,
-          toName: r.reviewer.name,
-          documentTitle: document.title,
-          documentUrl: `${appUrl}/documents/${id}`,
-          reviewUrl: `${appUrl}/review/${reviewToken}`,
-          sharePointUrl: document.sharePointUrl,
-          deadline: deadline?.toISOString() ?? null,
-          isApprover: true,
-          uploaderName: document.uploadedBy.name,
-        }
-      })
-    ).then((notifications) => sendBulkReviewNotifications(notifications)).catch(() => {})
+      )
+      await sendBulkReviewNotificationsAsync(notifications)
+    } catch (err) {
+      console.error('[advance] email error:', err)
+    }
+  }
+
+  // S12: Notify Document Controller — awaited so Cloud Run doesn't kill it
+  const appUrl = process.env.APP_URL || 'http://localhost:3000'
+  try {
+    await sendDocControllerNotification({
+      toEmail: document.uploadedBy.email ?? '',
+      toName: document.uploadedBy.name ?? '',
+      documentTitle: document.title,
+      documentUrl: `${appUrl}/documents/${id}`,
+      stage: 'IN_APPROVAL',
+    })
+  } catch (err) {
+    console.error('[advance] doc controller email error:', err)
   }
 
   const updated = await prisma.document.findUnique({

@@ -29,14 +29,11 @@ export async function GET(request: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const where: any = {}
 
-  if (session.role === 'DOCUMENT_MANAGER') {
-    where.uploadedById = session.userId
-  } else if (session.role === 'REVIEWER') {
-    where.reviews = { some: { reviewerId: session.userId, isApprover: false } }
-  } else if (session.role === 'APPROVER') {
-    where.reviews = { some: { reviewerId: session.userId, isApprover: true } }
+  if (session.role !== 'ADMIN' && session.role !== 'DOCUMENT_MANAGER') {
+    // Reviewers/approvers only see documents assigned to them
+    where.reviews = { some: { reviewerId: session.userId } }
   }
-  // ADMIN sees all
+  // ADMIN and DOCUMENT_MANAGER see all documents
 
   if (search) {
     where.OR = [

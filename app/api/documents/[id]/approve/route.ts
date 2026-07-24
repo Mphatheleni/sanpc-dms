@@ -1,16 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { sendOriginatorNotification } from '@/lib/email'
+import { sendOriginatorNotification, sendDocControllerNotification } from '@/lib/email'
 import { createNotification } from '@/lib/notify'
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  if (session.role !== 'APPROVER' && session.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
 
   const { id } = await params
   const { decision, comments } = await request.json()
@@ -33,7 +29,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: 'Document is not pending approval' }, { status: 400 })
   }
 
-  // Find this user's active approver review
+  // Find this user's active approver review — any assigned user can approve regardless of role
   const myReview = document.reviews.find(
     (r) => r.isApprover && r.reviewerId === session.userId && r.status === 'IN_PROGRESS'
   )
@@ -76,15 +72,25 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         id,
       )
       const appUrl = process.env.APP_URL || 'http://localhost:3000'
-      sendOriginatorNotification({
-        toEmail: document.uploadedBy.email,
-        toName: document.uploadedBy.name,
-        documentTitle: document.title,
-        documentUrl: `${appUrl}/documents/${id}`,
-        outcome: 'APPROVED',
-        reviewerName: session.name,
-        reviewerComments: comments || null,
-      }).catch(() => {})
+      // Await both notifications in parallel — Cloud Run would kill fire-and-forget
+      await Promise.all([
+        sendOriginatorNotification({
+          toEmail: document.uploadedBy.email,
+          toName: document.uploadedBy.name,
+          documentTitle: document.title,
+          documentUrl: `${appUrl}/documents/${id}`,
+          outcome: 'APPROVED',
+          reviewerName: session.name,
+          reviewerComments: comments || null,
+        }).catch((e) => console.error('[approve] originator email error:', e)),
+        sendDocControllerNotification({
+          toEmail: document.uploadedBy.email,
+          toName: document.uploadedBy.name,
+          documentTitle: document.title,
+          documentUrl: `${appUrl}/documents/${id}`,
+          stage: 'APPROVED',
+        }).catch((e) => console.error('[approve] doc controller email error:', e)),
+      ])
     }
     // else: other approvers still reviewing — no document status change yet
   } else {
@@ -112,15 +118,25 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       id,
     )
     const appUrl = process.env.APP_URL || 'http://localhost:3000'
-    sendOriginatorNotification({
-      toEmail: document.uploadedBy.email,
-      toName: document.uploadedBy.name,
-      documentTitle: document.title,
-      documentUrl: `${appUrl}/documents/${id}`,
-      outcome: 'REJECTED',
-      reviewerName: session.name,
-      reviewerComments: comments || null,
-    }).catch(() => {})
+    // Await both notifications in parallel
+    await Promise.all([
+      sendOriginatorNotification({
+        toEmail: document.uploadedBy.email,
+        toName: document.uploadedBy.name,
+        documentTitle: document.title,
+        documentUrl: `${appUrl}/documents/${id}`,
+        outcome: 'REJECTED',
+        reviewerName: session.name,
+        reviewerComments: comments || null,
+      }).catch((e) => console.error('[approve] originator email error:', e)),
+      sendDocControllerNotification({
+        toEmail: document.uploadedBy.email,
+        toName: document.uploadedBy.name,
+        documentTitle: document.title,
+        documentUrl: `${appUrl}/documents/${id}`,
+        stage: 'REJECTED',
+      }).catch((e) => console.error('[approve] doc controller email error:', e)),
+    ])
   }
 
   prisma.documentActivity.create({

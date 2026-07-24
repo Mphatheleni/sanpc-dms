@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { calcDeadline } from '@/lib/sla'
-import { sendBulkReviewNotifications } from '@/lib/email'
+import { sendBulkReviewNotificationsAsync, sendApproverHeadsUpEmail, sendDocControllerNotification } from '@/lib/email'
 import { signReviewToken } from '@/lib/reviewToken'
 import { createNotification } from '@/lib/notify'
 
@@ -17,6 +17,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       id: true, title: true, status: true, version: true,
       fileUrl: true, fileName: true, fileType: true, fileSize: true,
       uploadedById: true, sharePointUrl: true, reviewDeadlineDays: true,
+      uploadedBy: { select: { id: true, name: true, email: true } },
       reviews: {
         include: { reviewer: { select: { id: true, name: true, email: true } } },
         orderBy: { order: 'asc' },
@@ -101,29 +102,65 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     )
   })
 
-  // Fire-and-forget: email all activated reviewers/approvers with signed token links
+  // Email all activated reviewers/approvers — awaited so Cloud Run doesn't cut it short
   const appUrl = process.env.APP_URL || 'http://localhost:3000'
-  Promise.all(
-    groupToActivate.map(async (r) => {
-      const reviewToken = await signReviewToken({
-        documentId: id,
-        reviewId: r.id,
-        reviewerId: r.reviewer.id,
-        isApprover: !activateReviewers,
+  try {
+    const notifications = await Promise.all(
+      groupToActivate.map(async (r) => {
+        const reviewToken = await signReviewToken({
+          documentId: id,
+          reviewId: r.id,
+          reviewerId: r.reviewer.id,
+          isApprover: !activateReviewers,
+        })
+        return {
+          toEmail: r.reviewer.email,
+          toName: r.reviewer.name,
+          documentTitle: document.title,
+          documentUrl: `${appUrl}/documents/${id}`,
+          reviewUrl: `${appUrl}/review/${reviewToken}`,
+          sharePointUrl: document.sharePointUrl,
+          deadline: deadline?.toISOString() ?? null,
+          isApprover: !activateReviewers,
+          uploaderName: session.name,
+        }
       })
-      return {
-        toEmail: r.reviewer.email,
-        toName: r.reviewer.name,
-        documentTitle: document.title,
-        documentUrl: `${appUrl}/documents/${id}`,
-        reviewUrl: `${appUrl}/review/${reviewToken}`,
-        sharePointUrl: document.sharePointUrl,
-        deadline: deadline?.toISOString() ?? null,
-        isApprover: !activateReviewers,
-        uploaderName: session.name,
-      }
+    )
+    await sendBulkReviewNotificationsAsync(notifications)
+  } catch (err) {
+    console.error('[submit] reviewer email error:', err)
+  }
+
+  // Await all secondary notifications together so Cloud Run doesn't kill them
+  const secondaryEmails: Promise<void>[] = []
+
+  // S11: Heads-up to approvers when reviewers were activated first
+  if (activateReviewers && approverReviews.length > 0) {
+    for (const a of approverReviews) {
+      secondaryEmails.push(
+        sendApproverHeadsUpEmail({
+          toEmail: a.reviewer.email,
+          toName: a.reviewer.name,
+          documentTitle: document.title,
+          documentUrl: `${appUrl}/documents/${id}`,
+          uploaderName: session.name,
+        })
+      )
+    }
+  }
+
+  // S12: Notify Document Controller that workflow has started
+  secondaryEmails.push(
+    sendDocControllerNotification({
+      toEmail: document.uploadedBy.email,
+      toName: document.uploadedBy.name,
+      documentTitle: document.title,
+      documentUrl: `${appUrl}/documents/${id}`,
+      stage: 'SUBMITTED',
     })
-  ).then((notifications) => sendBulkReviewNotifications(notifications)).catch(() => {})
+  )
+
+  await Promise.all(secondaryEmails.map((p) => p.catch((e) => console.error('[submit] secondary email error:', e))))
 
   prisma.documentActivity.create({
     data: {

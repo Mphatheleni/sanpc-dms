@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyReviewToken } from '@/lib/reviewToken'
-import { sendOriginatorNotification, sendBulkReviewNotifications } from '@/lib/email'
+import { sendOriginatorNotification } from '@/lib/email'
 import { calcDeadline } from '@/lib/sla'
 
 export async function POST(
@@ -91,26 +91,34 @@ export async function POST(
         where: { id: documentId },
         data: { status: 'UPDATING' },
       })
-      sendOriginatorNotification({
-        toEmail: document.uploadedBy.email,
-        toName: document.uploadedBy.name,
-        documentTitle: document.title,
-        documentUrl: `${appUrl}/documents/${documentId}`,
-        outcome: 'REVIEW_COMPLETE',
-        reviewerName,
-        reviewerComments: comments || null,
-      }).catch(() => {})
+      try {
+        await sendOriginatorNotification({
+          toEmail: document.uploadedBy.email,
+          toName: document.uploadedBy.name,
+          documentTitle: document.title,
+          documentUrl: `${appUrl}/documents/${documentId}`,
+          outcome: 'REVIEW_COMPLETE',
+          reviewerName,
+          reviewerComments: comments || null,
+        })
+      } catch (err) {
+        console.error('[review-token] review-complete email error:', err)
+      }
     } else {
       // Notify doc manager that this specific reviewer has submitted
-      sendOriginatorNotification({
-        toEmail: document.uploadedBy.email,
-        toName: document.uploadedBy.name,
-        documentTitle: document.title,
-        documentUrl: `${appUrl}/documents/${documentId}`,
-        outcome: 'REVIEWER_COMPLETE',
-        reviewerName,
-        reviewerComments: comments || null,
-      }).catch(() => {})
+      try {
+        await sendOriginatorNotification({
+          toEmail: document.uploadedBy.email,
+          toName: document.uploadedBy.name,
+          documentTitle: document.title,
+          documentUrl: `${appUrl}/documents/${documentId}`,
+          outcome: 'REVIEWER_COMPLETE',
+          reviewerName,
+          reviewerComments: comments || null,
+        })
+      } catch (err) {
+        console.error('[review-token] reviewer-complete email error:', err)
+      }
     }
 
     prisma.documentActivity.create({
@@ -133,15 +141,19 @@ export async function POST(
 
     if (pendingApprovers.length === 0) {
       await prisma.document.update({ where: { id: documentId }, data: { status: 'APPROVED' } })
-      sendOriginatorNotification({
-        toEmail: document.uploadedBy.email,
-        toName: document.uploadedBy.name,
-        documentTitle: document.title,
-        documentUrl: `${appUrl}/documents/${documentId}`,
-        outcome: 'APPROVED',
-        reviewerName,
-        reviewerComments: comments || null,
-      }).catch(() => {})
+      try {
+        await sendOriginatorNotification({
+          toEmail: document.uploadedBy.email,
+          toName: document.uploadedBy.name,
+          documentTitle: document.title,
+          documentUrl: `${appUrl}/documents/${documentId}`,
+          outcome: 'APPROVED',
+          reviewerName,
+          reviewerComments: comments || null,
+        })
+      } catch (err) {
+        console.error('[review-token] approved email error:', err)
+      }
     }
 
     prisma.documentActivity.create({
@@ -164,15 +176,19 @@ export async function POST(
     prisma.document.update({ where: { id: documentId }, data: { status: 'REJECTED' } }),
   ])
 
-  sendOriginatorNotification({
-    toEmail: document.uploadedBy.email,
-    toName: document.uploadedBy.name,
-    documentTitle: document.title,
-    documentUrl: `${appUrl}/documents/${documentId}`,
-    outcome: 'REJECTED',
-    reviewerName,
-    reviewerComments: comments || null,
-  }).catch(() => {})
+  try {
+    await sendOriginatorNotification({
+      toEmail: document.uploadedBy.email,
+      toName: document.uploadedBy.name,
+      documentTitle: document.title,
+      documentUrl: `${appUrl}/documents/${documentId}`,
+      outcome: 'REJECTED',
+      reviewerName,
+      reviewerComments: comments || null,
+    })
+  } catch (err) {
+    console.error('[review-token] rejected email error:', err)
+  }
 
   prisma.documentActivity.create({
     data: { documentId, userId: reviewerId, action: 'REJECTED', details: comments || undefined },

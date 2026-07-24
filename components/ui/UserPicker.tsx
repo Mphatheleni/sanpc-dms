@@ -40,6 +40,7 @@ function initials(name: string) {
 export default function UserPicker({ users, value, onChange, placeholder = 'Search users…', label, required }: UserPickerProps) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
+  const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -50,10 +51,19 @@ export default function UserPicker({ users, value, onChange, placeholder = 'Sear
       )
     : users.slice(0, 10)
 
+  function openWith() {
+    if (containerRef.current) {
+      const r = containerRef.current.getBoundingClientRect()
+      setDropdownRect({ top: r.bottom + 4, left: r.left, width: r.width })
+    }
+    setOpen(true)
+  }
+
   function select(u: PickableUser) {
     onChange(u)
     setQuery('')
     setOpen(false)
+    setDropdownRect(null)
   }
 
   function clear() {
@@ -61,17 +71,30 @@ export default function UserPicker({ users, value, onChange, placeholder = 'Sear
     setQuery('')
   }
 
-  // Close dropdown on outside click
+  // Close on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false)
         setQuery('')
+        setDropdownRect(null)
       }
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
+
+  // Close on scroll or resize (fixed position would drift otherwise)
+  useEffect(() => {
+    if (!open) return
+    function close() { setOpen(false); setDropdownRect(null) }
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => {
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+    }
+  }, [open])
 
   return (
     <div ref={containerRef} className="relative">
@@ -118,17 +141,26 @@ export default function UserPicker({ users, value, onChange, placeholder = 'Sear
             ref={inputRef}
             type="text"
             value={query}
-            onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
-            onFocus={() => setOpen(true)}
+            onChange={(e) => { setQuery(e.target.value); openWith() }}
+            onFocus={openWith}
             placeholder={placeholder}
             className="w-full rounded-lg border border-gray-200 bg-gray-50 pl-9 pr-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 transition focus:border-[#1C3557] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1C3557]/10"
           />
         </div>
       )}
 
-      {/* Dropdown */}
-      {open && !value && (
-        <div className="absolute z-50 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg overflow-hidden">
+      {/* Dropdown — fixed position escapes any overflow:hidden parent */}
+      {open && !value && dropdownRect && (
+        <div
+          style={{
+            position: 'fixed',
+            top: dropdownRect.top,
+            left: dropdownRect.left,
+            width: dropdownRect.width,
+            zIndex: 9999,
+          }}
+          className="rounded-lg border border-gray-200 bg-white shadow-lg overflow-hidden"
+        >
           {filtered.length === 0 ? (
             <div className="flex items-center gap-2 px-3 py-3 text-sm text-gray-400">
               <User className="h-4 w-4" />

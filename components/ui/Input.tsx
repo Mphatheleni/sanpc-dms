@@ -37,6 +37,7 @@ export function Textarea({ label, className = '', id, ...props }: TextareaProps)
       )}
       <textarea
         id={textareaId}
+        dir="ltr"
         className={`w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sanpc-navy focus:outline-none focus:ring-1 focus:ring-sanpc-navy resize-none ${className}`}
         {...props}
       />

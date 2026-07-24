@@ -37,7 +37,7 @@ async function getGraphToken(): Promise<string> {
         client_secret: process.env.AZURE_CLIENT_SECRET!,
         username:      process.env.MAIL_SENDER!,
         password:      process.env.MAIL_PASSWORD!,
-        scope:         'https://graph.microsoft.com/Mail.Send',
+        scope:         'https://graph.microsoft.com/Mail.Send offline_access',
       }),
     },
   )
@@ -189,6 +189,17 @@ export function sendBulkReviewNotifications(notifications: ReviewEmailProps[]): 
   }
 }
 
+/** Awaitable version — use in API routes so emails complete before the response returns. */
+export async function sendBulkReviewNotificationsAsync(notifications: ReviewEmailProps[]): Promise<void> {
+  await Promise.all(
+    notifications.map((n) =>
+      sendReviewNotification(n).catch((err) =>
+        console.error(`[email] failed to send to ${n.toEmail}:`, err)
+      )
+    )
+  )
+}
+
 export type OriginatorOutcome = 'CHANGES_REQUESTED' | 'REJECTED' | 'APPROVED' | 'REVIEW_COMPLETE' | 'REVIEWER_COMPLETE'
 
 interface OriginatorEmailProps {
@@ -253,4 +264,136 @@ export async function sendOriginatorNotification(props: OriginatorEmailProps): P
     REJECTED:           `[SANPC DMS] Rejected: ${props.documentTitle}`,
   }
   await sendViaGraph(props.toEmail, props.toName, subjectMap[props.outcome], buildOriginatorHtml(props))
+}
+
+/* ── S8: Reviewer removed notification ──────────────────────────────────── */
+
+export async function sendReviewerRemovedEmail(props: {
+  toEmail: string
+  toName: string
+  documentTitle: string
+  documentUrl: string
+}): Promise<void> {
+  if (!isEmailConfigured()) {
+    console.log(`[email] not configured — would notify removed reviewer ${props.toEmail}`)
+    return
+  }
+  const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:0;">
+  <div style="max-width:600px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;
+    box-shadow:0 2px 8px rgba(0,0,0,.08);">
+    <div style="background:#1C3557;padding:28px 32px;">
+      <div style="font-size:22px;font-weight:800;color:#fff;">SANPC DMS</div>
+      <div style="font-size:11px;font-weight:600;letter-spacing:.18em;color:#F5A623;margin-top:2px;">POWERING YOUR TOMORROW</div>
+    </div>
+    <div style="padding:32px;">
+      <p style="margin:0 0 16px;font-size:15px;color:#374151;">Dear <strong>${props.toName}</strong>,</p>
+      <p style="margin:0 0 16px;font-size:14px;color:#374151;">
+        You have been <strong>removed from the review workflow</strong> for the following document:
+      </p>
+      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;margin-bottom:20px;">
+        <div style="font-size:17px;font-weight:700;color:#1C3557;">${props.documentTitle}</div>
+      </div>
+      <p style="margin:0 0 16px;font-size:14px;color:#374151;">No further action is required from you on this document.</p>
+      ${btn(props.documentUrl, 'View Document', '#1C3557', '#fff')}
+      <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0 16px;" />
+      <p style="margin:0;font-size:12px;color:#9ca3af;">Automated notification from SANPC DMS.</p>
+    </div>
+  </div>
+</body></html>`
+  await sendViaGraph(props.toEmail, props.toName, `[SANPC DMS] Removed from review: ${props.documentTitle}`, html)
+}
+
+/* ── S11: Approver heads-up when document submitted for review ──────────── */
+
+export async function sendApproverHeadsUpEmail(props: {
+  toEmail: string
+  toName: string
+  documentTitle: string
+  documentUrl: string
+  uploaderName: string
+}): Promise<void> {
+  if (!isEmailConfigured()) {
+    console.log(`[email] not configured — would send approver heads-up to ${props.toEmail}`)
+    return
+  }
+  const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:0;">
+  <div style="max-width:600px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;
+    box-shadow:0 2px 8px rgba(0,0,0,.08);">
+    <div style="background:#1C3557;padding:28px 32px;">
+      <div style="font-size:22px;font-weight:800;color:#fff;">SANPC DMS</div>
+      <div style="font-size:11px;font-weight:600;letter-spacing:.18em;color:#F5A623;margin-top:2px;">POWERING YOUR TOMORROW</div>
+    </div>
+    <div style="padding:32px;">
+      <div style="background:#E8EDF4;border-left:4px solid #1C3557;border-radius:6px;padding:14px 18px;margin-bottom:24px;">
+        <div style="font-size:14px;font-weight:700;color:#1C3557;">For Your Information — Document Submitted for Review</div>
+        <div style="font-size:13px;color:#374151;margin-top:4px;">You will be notified when this document reaches the approval stage.</div>
+      </div>
+      <p style="margin:0 0 8px;font-size:15px;color:#374151;">Dear <strong>${props.toName}</strong>,</p>
+      <p style="margin:0 0 16px;font-size:14px;color:#374151;">
+        <strong>${props.uploaderName}</strong> has submitted the following document for review.
+        Once all reviewers have completed their review, you will receive a separate notification to approve it.
+      </p>
+      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;margin-bottom:20px;">
+        <div style="font-size:17px;font-weight:700;color:#1C3557;">${props.documentTitle}</div>
+      </div>
+      ${btn(props.documentUrl, 'View Document in SANPC DMS', '#1C3557', '#fff')}
+      <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0 16px;" />
+      <p style="margin:0;font-size:12px;color:#9ca3af;">Automated notification from SANPC DMS.</p>
+    </div>
+  </div>
+</body></html>`
+  await sendViaGraph(props.toEmail, props.toName, `[SANPC DMS] FYI — Under Review: ${props.documentTitle}`, html)
+}
+
+/* ── S12: Document Controller stage notifications ───────────────────────── */
+
+export type DocControllerStage = 'SUBMITTED' | 'IN_APPROVAL' | 'APPROVED' | 'REJECTED'
+
+export async function sendDocControllerNotification(props: {
+  toEmail: string
+  toName: string
+  documentTitle: string
+  documentUrl: string
+  stage: DocControllerStage
+}): Promise<void> {
+  if (!isEmailConfigured()) {
+    console.log(`[email] not configured — would send doc controller notification to ${props.toEmail} stage=${props.stage}`)
+    return
+  }
+  const stageConfig: Record<DocControllerStage, { label: string; color: string; bg: string; message: string }> = {
+    SUBMITTED:   { label: 'Document Submitted for Review',  color: '#1C3557', bg: '#E8EDF4', message: 'The document has been submitted and the review workflow has started.' },
+    IN_APPROVAL: { label: 'Document Sent for Approval',     color: '#7C3AED', bg: '#F5F3FF', message: 'All reviewers have completed their review. The Final Draft has been sent for formal approval.' },
+    APPROVED:    { label: 'Document Approved',              color: '#16A34A', bg: '#F0FDF4', message: 'The document has been formally approved by all approvers.' },
+    REJECTED:    { label: 'Document Rejected',              color: '#DC2626', bg: '#FEF2F2', message: 'The document has been rejected. Please review the feedback and coordinate with the Originator.' },
+  }
+  const cfg = stageConfig[props.stage]
+  const subjectMap: Record<DocControllerStage, string> = {
+    SUBMITTED:   `[SANPC DMS] Workflow Started: ${props.documentTitle}`,
+    IN_APPROVAL: `[SANPC DMS] Sent for Approval: ${props.documentTitle}`,
+    APPROVED:    `[SANPC DMS] Approved: ${props.documentTitle}`,
+    REJECTED:    `[SANPC DMS] Rejected: ${props.documentTitle}`,
+  }
+  const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:0;">
+  <div style="max-width:600px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;
+    box-shadow:0 2px 8px rgba(0,0,0,.08);">
+    <div style="background:#1C3557;padding:28px 32px;">
+      <div style="font-size:22px;font-weight:800;color:#fff;">SANPC DMS</div>
+      <div style="font-size:11px;font-weight:600;letter-spacing:.18em;color:#F5A623;margin-top:2px;">POWERING YOUR TOMORROW</div>
+    </div>
+    <div style="padding:32px;">
+      <div style="background:${cfg.bg};border-left:4px solid ${cfg.color};border-radius:6px;padding:14px 18px;margin-bottom:24px;">
+        <div style="font-size:15px;font-weight:700;color:${cfg.color};">${cfg.label}</div>
+        <div style="font-size:13px;color:#374151;margin-top:4px;">${cfg.message}</div>
+      </div>
+      <p style="margin:0 0 8px;font-size:15px;color:#374151;">Dear <strong>${props.toName}</strong>,</p>
+      <p style="margin:0 0 16px;font-size:14px;color:#374151;">
+        Document: <strong>${props.documentTitle}</strong>
+      </p>
+      ${btn(props.documentUrl, 'View Document in SANPC DMS', cfg.color, '#fff')}
+      <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0 16px;" />
+      <p style="margin:0;font-size:12px;color:#9ca3af;">Automated notification from SANPC DMS.</p>
+    </div>
+  </div>
+</body></html>`
+  await sendViaGraph(props.toEmail, props.toName, subjectMap[props.stage], html)
 }

@@ -3,7 +3,7 @@ import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { calcDeadline } from '@/lib/sla'
 import { signReviewToken } from '@/lib/reviewToken'
-import { sendReviewNotification } from '@/lib/email'
+import { sendReviewNotification, sendReviewerRemovedEmail } from '@/lib/email'
 
 export async function POST(
   req: NextRequest,
@@ -105,19 +105,31 @@ export async function POST(
     isApprover: existingReview.isApprover,
   })
 
-  // Send email to the new reviewer (fire-and-forget)
+  // Send both emails in parallel and await so Cloud Run doesn't kill them
   const appUrl = process.env.APP_URL || 'http://localhost:3000'
-  sendReviewNotification({
-    toEmail: newReviewer.email,
-    toName: newReviewer.name,
-    documentTitle: document.title,
-    documentUrl: `${appUrl}/documents/${id}`,
-    reviewUrl: `${appUrl}/review/${reviewToken}`,
-    sharePointUrl: document.sharePointUrl,
-    deadline: deadline?.toISOString() ?? null,
-    isApprover: existingReview.isApprover,
-    uploaderName: document.uploadedBy.name,
-  }).catch(() => {})
+  try {
+    await Promise.all([
+      sendReviewerRemovedEmail({
+        toEmail: existingReview.reviewer.email,
+        toName: existingReview.reviewer.name,
+        documentTitle: document.title,
+        documentUrl: `${appUrl}/documents/${id}`,
+      }),
+      sendReviewNotification({
+        toEmail: newReviewer.email,
+        toName: newReviewer.name,
+        documentTitle: document.title,
+        documentUrl: `${appUrl}/documents/${id}`,
+        reviewUrl: `${appUrl}/review/${reviewToken}`,
+        sharePointUrl: document.sharePointUrl,
+        deadline: deadline?.toISOString() ?? null,
+        isApprover: existingReview.isApprover,
+        uploaderName: document.uploadedBy.name,
+      }),
+    ])
+  } catch (err) {
+    console.error('[replace-reviewer] email error:', err)
+  }
 
   // Return updated document
   const updated = await prisma.document.findUnique({

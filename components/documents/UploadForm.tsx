@@ -2,9 +2,9 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Upload, Plus, Trash2, GripVertical, Wand2, ShieldCheck } from 'lucide-react'
+import { Upload, Plus, Trash2, GripVertical, ShieldCheck, Check } from 'lucide-react'
 import Button from '@/components/ui/Button'
-import { Input, Textarea } from '@/components/ui/Input'
+import { Input } from '@/components/ui/Input'
 import UserPicker, { type PickableUser } from '@/components/ui/UserPicker'
 
 // SANPC document types per CSS/PR/CSF/005
@@ -78,10 +78,7 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
   const [tags, setTags] = useState('')
   const [metadata, setMetadata] = useState<MetadataEntry[]>([])
   // SANPC fields
-  const [subjectCode, setSubjectCode] = useState('')
-  const [unitCode, setUnitCode] = useState('')
-  const [sequentialNo, setSequentialNo] = useState('')
-  const [suggestedNo, setSuggestedNo] = useState<string | null>(null)
+  const [documentNumber, setDocumentNumber] = useState('')
   const [revision, setRevision] = useState('00')
   const [originator, setOriginator] = useState('')
   const [authorisedBy, setAuthorisedBy] = useState('')
@@ -98,30 +95,16 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
   // Mandatory reviewers — person-based, auto-loaded per document type
   const [mandatoryReviewers, setMandatoryReviewers] = useState<MandatoryReviewer[]>([])
   const [loadingMandatory, setLoadingMandatory] = useState(false)
+  const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null)
 
   // IDs of users that are mandatory for the current document type
   const mandatoryUserIds = new Set(mandatoryReviewers.map((m) => m.user.id))
 
-  const reviewerUsers = users.filter((u) => u.role === 'REVIEWER' || u.role === 'ADMIN')
-  const approverUsers = users.filter((u) => u.role === 'APPROVER' || u.role === 'ADMIN')
+  const reviewerUsers = users
+  const approverUsers = users
   const docTypeCode = SANPC_DOC_TYPES.find((t) => t.label === category)?.code ?? ''
   const dragItemRef = useRef<string | null>(null)
   const dragOverRef = useRef<string | null>(null)
-
-  // Auto-suggest next sequential number when subject/type/unit are all filled
-  useEffect(() => {
-    const code = SANPC_DOC_TYPES.find((t) => t.label === category)?.code ?? ''
-    if (!subjectCode || !code || !unitCode) { setSuggestedNo(null); return }
-    const timer = setTimeout(async () => {
-      try {
-        const res = await fetch(
-          `/api/documents/next-number?subject=${encodeURIComponent(subjectCode)}&type=${encodeURIComponent(code)}&unit=${encodeURIComponent(unitCode)}`
-        )
-        if (res.ok) setSuggestedNo((await res.json()).nextNumber)
-      } catch { /* ignore */ }
-    }, 400)
-    return () => clearTimeout(timer)
-  }, [subjectCode, category, unitCode])
 
   // When category changes: fetch mandatory reviewers and pre-add them to the reviewer list
   useEffect(() => {
@@ -218,7 +201,15 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
 
   function removeMember(userId: string, setList: React.Dispatch<React.SetStateAction<WorkflowMember[]>>) {
     setList((prev) => prev.filter((m) => m.userId !== userId).map((m, i) => ({ ...m, order: i + 1 })))
-    setMandatoryReviewers((prev) => prev.filter((m) => m.user.id !== userId))
+    // mandatoryReviewers tags are never removed — they persist so the user can re-add
+  }
+
+  function addMandatoryReviewer(userId: string) {
+    const m = mandatoryReviewers.find((c) => c.user.id === userId)
+    if (!m || reviewers.find((r) => r.userId === userId)) return
+    setReviewers((prev) => [...prev, { userId: m.user.id, name: m.user.name, email: m.user.email, order: prev.length + 1 }])
+    setNewlyAddedId(userId)
+    setTimeout(() => setNewlyAddedId(null), 400)
   }
 
   function addMetadata() { setMetadata((prev) => [...prev, { key: '', value: '' }]) }
@@ -232,9 +223,6 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
     if (reviewers.length === 0 && approvers.length === 0) return
     setSubmitting(true)
     setSubmitError('')
-    const documentNumber = subjectCode && docTypeCode && unitCode && sequentialNo
-      ? `${subjectCode.toUpperCase()}/${docTypeCode}/${unitCode.toUpperCase()}/${sequentialNo}`
-      : undefined
     try {
       const res = await fetch('/api/documents', {
         method: 'POST',
@@ -245,7 +233,7 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
           reviewers: reviewers.map((r) => ({ userId: r.userId, order: r.order })),
           approvers: approvers.map((a) => ({ userId: a.userId, order: a.order })),
           metadata: metadata.filter((m) => m.key && m.value),
-          documentNumber, documentTypeCode: docTypeCode || undefined,
+          documentNumber: documentNumber || undefined, documentTypeCode: docTypeCode || undefined,
           revision: revision || '00',
           originator: originatorUser?.name || originator || undefined,
           authorisedBy: authorizerUser?.name || authorisedBy || undefined,
@@ -274,6 +262,7 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
     pool: UserOption[]; setList: React.Dispatch<React.SetStateAction<WorkflowMember[]>>; emptyText: string
   }) {
     const available = pool.filter((u) => !members.find((m) => m.userId === u.id))
+    const [pickerValue, setPickerValue] = useState<PickableUser | null>(null)
     return (
       <div>
         <div className="flex items-center justify-between mb-1.5">
@@ -282,16 +271,14 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
         </div>
         <p className="text-xs text-gray-400 mb-2">{sublabel}</p>
         <div className="mb-2">
-          <select
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sanpc-navy focus:outline-none focus:ring-1 focus:ring-sanpc-navy"
-            onChange={(e) => { addMember(e.target.value, members, setList, pool); e.target.value = '' }}
-            defaultValue=""
-          >
-            <option value="" disabled>{`Add ${label.toLowerCase()}…`}</option>
-            {available.map((u) => (
-              <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
-            ))}
-          </select>
+          <UserPicker
+            users={available}
+            value={pickerValue}
+            onChange={(u) => {
+              if (u) { addMember(u.id, members, setList, pool); setPickerValue(null) }
+            }}
+            placeholder={`Search ${label.toLowerCase()}…`}
+          />
         </div>
         {members.length === 0 ? (
           <p className="text-sm text-gray-400 italic">{emptyText}</p>
@@ -308,6 +295,8 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
                   onDragEnd={() => { handleDragReorder(setList); setDragOverId(null) }}
                   onDragOver={(e) => e.preventDefault()}
                   className={`flex items-center gap-2 rounded-lg border px-3 py-2 transition-colors ${
+                    newlyAddedId === m.userId ? 'animate-slide-in' : ''
+                  } ${
                     dragOverId === m.userId
                       ? 'border-sanpc-amber bg-amber-50'
                       : isMandatory ? 'border-purple-200 bg-purple-50' : 'border-gray-200 bg-gray-50'
@@ -330,15 +319,13 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
                     </span>
                   )}
                   <span className="text-xs text-gray-400 hidden sm:block">{m.email}</span>
-                  {!isMandatory && (
-                    <button
-                      type="button"
-                      onClick={() => removeMember(m.userId, setList)}
-                      className="rounded p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => removeMember(m.userId, setList)}
+                    className="rounded p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               )
             })}
@@ -422,8 +409,6 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
             onChange={(e) => setPurpose(e.target.value)}
             placeholder="e.g. To govern the control and management of regulatory documents"
           />
-          <Textarea label="Description" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
-
           {/* Document Type */}
           <div className="space-y-1">
             <label className="block text-sm font-medium text-gray-700">Document Type *</label>
@@ -439,41 +424,15 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
             </select>
           </div>
 
-          {/* Document Number Builder */}
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="block text-sm font-semibold text-gray-700">Document Number</label>
-              {subjectCode && category && unitCode && sequentialNo && (
-                <span className="text-xs font-mono font-bold text-sanpc-navy bg-sanpc-navy-light px-2 py-0.5 rounded">
-                  {subjectCode.toUpperCase()}/{SANPC_DOC_TYPES.find((t) => t.label === category)?.code ?? '??'}/{unitCode.toUpperCase()}/{sequentialNo}
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-gray-400">Format: SUBJECT / TYPE / UNIT / NUMBER (e.g. CSS/PR/CSF/005)</p>
-            <div className="grid grid-cols-2 gap-3">
-              <Input label="Subject Code" value={subjectCode} onChange={(e) => setSubjectCode(e.target.value.toUpperCase())} placeholder="e.g. CSS" />
-              <Input label="Unit Code" value={unitCode} onChange={(e) => setUnitCode(e.target.value.toUpperCase())} placeholder="e.g. CSF" />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Sequential No.</label>
-                <div className="flex gap-1.5">
-                  <input
-                    type="text" value={sequentialNo} onChange={(e) => setSequentialNo(e.target.value)} placeholder="e.g. 005"
-                    className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sanpc-navy focus:outline-none focus:ring-1 focus:ring-sanpc-navy"
-                  />
-                  {suggestedNo && (
-                    <button type="button" title={`Use suggested: ${suggestedNo}`} onClick={() => setSequentialNo(suggestedNo)}
-                      className="flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700 hover:bg-amber-100 transition-colors"
-                    >
-                      <Wand2 className="h-3.5 w-3.5" />{suggestedNo}
-                    </button>
-                  )}
-                </div>
-                {suggestedNo && <p className="text-[10px] text-gray-400 mt-0.5">Next available: {suggestedNo}</p>}
-              </div>
-              <Input label="Revision No." value={revision} onChange={(e) => setRevision(e.target.value)} placeholder="e.g. 00" />
-            </div>
+          {/* Document Number */}
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="Document Number"
+              value={documentNumber}
+              onChange={(e) => setDocumentNumber(e.target.value)}
+              placeholder="e.g. CSS/PR/CSF/005"
+            />
+            <Input label="Revision No." value={revision} onChange={(e) => setRevision(e.target.value)} placeholder="e.g. 00" />
           </div>
 
           {/* People */}
@@ -544,20 +503,35 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
                   {[1, 2].map((i) => <div key={i} className="h-7 w-28 animate-pulse rounded-full bg-purple-200" />)}
                 </div>
               ) : (
-                <div className="flex flex-wrap gap-2">
-                  {mandatoryReviewers.map((m) => (
-                    <span
-                      key={m.id}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-purple-300 bg-white px-3 py-1 text-xs font-semibold text-purple-800"
-                    >
-                      {m.user.name}
-                      <span className="text-[10px] text-purple-400">· pre-selected</span>
-                    </span>
-                  ))}
-                  <p className="w-full text-[11px] text-purple-500 mt-1">
-                    These people are already added as reviewers below. You can remove any using the ✕ button.
+                <>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {mandatoryReviewers.map((m) => {
+                      const isAdded = reviewers.some((r) => r.userId === m.user.id)
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => addMandatoryReviewer(m.user.id)}
+                          disabled={isAdded}
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-all duration-200 ${
+                            isAdded
+                              ? 'border-purple-400 bg-purple-600 text-white cursor-default'
+                              : 'border-purple-300 bg-white text-purple-800 hover:bg-purple-100 hover:border-purple-400 cursor-pointer'
+                          }`}
+                        >
+                          {isAdded
+                            ? <Check className="h-3 w-3" />
+                            : <Plus className="h-3 w-3" />
+                          }
+                          {m.user.name}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p className="text-[11px] text-purple-500">
+                    Click a tag to add to the reviewers list below. Remove from the list at any time — these tags stay.
                   </p>
-                </div>
+                </>
               )}
             </div>
           )}
