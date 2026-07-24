@@ -169,6 +169,7 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
             const overdue = isReviewOverdue(review.startedAt, review.deadline)
             const deadlineLabel = getDeadlineLabel(review.deadline)
             const isActive = review.status === 'IN_PROGRESS'
+            const isModifiable = review.status === 'IN_PROGRESS' || review.status === 'PENDING'
             return (
               <div
                 key={review.id}
@@ -209,7 +210,7 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
                           ? <Badge variant="success">Completed</Badge>
                           : <StatusBadge status={review.status} />
                         }
-                        {canManage && isActive && (
+                        {canManage && isModifiable && (
                           <div className="flex items-center gap-1">
                             <button
                               type="button"

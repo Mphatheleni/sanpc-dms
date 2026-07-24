@@ -32,12 +32,9 @@ export async function POST(
     session.role === 'DOCUMENT_MANAGER'
   if (!canManage) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  const allowedStatuses = ['IN_REVIEW', 'PENDING_APPROVAL', 'FINAL_DRAFT']
-  if (!allowedStatuses.includes(document.status)) {
-    return NextResponse.json(
-      { error: 'Reviewer removal is only allowed while document is IN_REVIEW or in approval' },
-      { status: 400 },
-    )
+  const terminalStatuses = ['APPROVED', 'CONTROLLED', 'SUPERSEDED', 'CANCELLED']
+  if (terminalStatuses.includes(document.status)) {
+    return NextResponse.json({ error: 'Cannot modify workflow of a finalised document' }, { status: 400 })
   }
 
   const { reviewId } = await req.json()
@@ -46,22 +43,25 @@ export async function POST(
   const existingReview = document.reviews.find((r) => r.id === reviewId)
   if (!existingReview) return NextResponse.json({ error: 'Review not found on this document' }, { status: 404 })
 
-  if (existingReview.status !== 'IN_PROGRESS') {
-    return NextResponse.json({ error: 'Only IN_PROGRESS reviews can be removed' }, { status: 400 })
+  if (existingReview.status === 'APPROVED') {
+    return NextResponse.json({ error: 'Cannot remove a reviewer who has already completed their review' }, { status: 400 })
   }
 
   await prisma.documentReview.delete({ where: { id: reviewId } })
 
-  const appUrl = process.env.APP_URL || 'http://localhost:3000'
-  try {
-    await sendReviewerRemovedEmail({
-      toEmail: existingReview.reviewer.email,
-      toName: existingReview.reviewer.name,
-      documentTitle: document.title,
-      documentUrl: `${appUrl}/documents/${id}`,
-    })
-  } catch (err) {
-    console.error('[remove-reviewer] email error:', err)
+  // Only notify if the reviewer was already active (IN_PROGRESS) — PENDING means they were never emailed
+  if (existingReview.status === 'IN_PROGRESS') {
+    const appUrl = process.env.APP_URL || 'http://localhost:3000'
+    try {
+      await sendReviewerRemovedEmail({
+        toEmail: existingReview.reviewer.email,
+        toName: existingReview.reviewer.name,
+        documentTitle: document.title,
+        documentUrl: `${appUrl}/documents/${id}`,
+      })
+    } catch (err) {
+      console.error('[remove-reviewer] email error:', err)
+    }
   }
 
   prisma.documentActivity.create({

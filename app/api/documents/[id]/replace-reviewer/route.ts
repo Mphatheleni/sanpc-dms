@@ -36,12 +36,9 @@ export async function POST(
     session.role === 'DOCUMENT_MANAGER'
   if (!canManage) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  // Only allowed when document is actively in review or approval
-  if (document.status !== 'IN_REVIEW' && document.status !== 'PENDING_APPROVAL') {
-    return NextResponse.json(
-      { error: 'Reviewer replacement is only allowed while the document is IN_REVIEW or PENDING_APPROVAL' },
-      { status: 400 },
-    )
+  const terminalStatuses = ['APPROVED', 'CONTROLLED', 'SUPERSEDED', 'CANCELLED']
+  if (terminalStatuses.includes(document.status)) {
+    return NextResponse.json({ error: 'Cannot modify workflow of a finalised document' }, { status: 400 })
   }
 
   const { reviewId, newReviewerId } = await req.json()
@@ -54,11 +51,8 @@ export async function POST(
     return NextResponse.json({ error: 'Review record not found on this document' }, { status: 404 })
   }
 
-  if (existingReview.status !== 'IN_PROGRESS') {
-    return NextResponse.json(
-      { error: 'Only IN_PROGRESS reviews can be reassigned' },
-      { status: 400 },
-    )
+  if (existingReview.status === 'APPROVED') {
+    return NextResponse.json({ error: 'Cannot replace a reviewer who has already completed their review' }, { status: 400 })
   }
 
   // Prevent assigning someone already on the workflow
@@ -79,56 +73,50 @@ export async function POST(
   })
   if (!newReviewer) return NextResponse.json({ error: 'New reviewer not found' }, { status: 404 })
 
+  const isPending = existingReview.status === 'PENDING'
   const now = new Date()
-  const deadline = document.reviewDeadlineDays
-    ? calcDeadline(now, document.reviewDeadlineDays)
-    : null
+  const deadline = document.reviewDeadlineDays ? calcDeadline(now, document.reviewDeadlineDays) : null
 
-  // Update the review record: swap reviewer, keep IN_PROGRESS, fresh timestamps
-  await prisma.documentReview.update({
-    where: { id: reviewId },
-    data: {
-      reviewerId: newReviewerId,
-      status: 'IN_PROGRESS',
-      startedAt: now,
-      deadline,
-      reviewedAt: null,
-      comments: null,
-    },
-  })
+  if (isPending) {
+    // Pre-submission: just swap the reviewer ID, keep PENDING — no emails (they were never notified)
+    await prisma.documentReview.update({
+      where: { id: reviewId },
+      data: { reviewerId: newReviewerId, reviewedAt: null, comments: null },
+    })
+  } else {
+    // Active review: swap reviewer, refresh timestamps, notify both parties
+    await prisma.documentReview.update({
+      where: { id: reviewId },
+      data: { reviewerId: newReviewerId, status: 'IN_PROGRESS', startedAt: now, deadline, reviewedAt: null, comments: null },
+    })
 
-  // Sign a new JWT token for the replacement reviewer
-  const reviewToken = await signReviewToken({
-    documentId: id,
-    reviewId,
-    reviewerId: newReviewerId,
-    isApprover: existingReview.isApprover,
-  })
-
-  // Send both emails in parallel and await so Cloud Run doesn't kill them
-  const appUrl = process.env.APP_URL || 'http://localhost:3000'
-  try {
-    await Promise.all([
-      sendReviewerRemovedEmail({
-        toEmail: existingReview.reviewer.email,
-        toName: existingReview.reviewer.name,
-        documentTitle: document.title,
-        documentUrl: `${appUrl}/documents/${id}`,
-      }),
-      sendReviewNotification({
-        toEmail: newReviewer.email,
-        toName: newReviewer.name,
-        documentTitle: document.title,
-        documentUrl: `${appUrl}/documents/${id}`,
-        reviewUrl: `${appUrl}/review/${reviewToken}`,
-        sharePointUrl: document.sharePointUrl,
-        deadline: deadline?.toISOString() ?? null,
-        isApprover: existingReview.isApprover,
-        uploaderName: document.uploadedBy.name,
-      }),
-    ])
-  } catch (err) {
-    console.error('[replace-reviewer] email error:', err)
+    const reviewToken = await signReviewToken({
+      documentId: id, reviewId, reviewerId: newReviewerId, isApprover: existingReview.isApprover,
+    })
+    const appUrl = process.env.APP_URL || 'http://localhost:3000'
+    try {
+      await Promise.all([
+        sendReviewerRemovedEmail({
+          toEmail: existingReview.reviewer.email,
+          toName: existingReview.reviewer.name,
+          documentTitle: document.title,
+          documentUrl: `${appUrl}/documents/${id}`,
+        }),
+        sendReviewNotification({
+          toEmail: newReviewer.email,
+          toName: newReviewer.name,
+          documentTitle: document.title,
+          documentUrl: `${appUrl}/documents/${id}`,
+          reviewUrl: `${appUrl}/review/${reviewToken}`,
+          sharePointUrl: document.sharePointUrl,
+          deadline: deadline?.toISOString() ?? null,
+          isApprover: existingReview.isApprover,
+          uploaderName: document.uploadedBy.name,
+        }),
+      ])
+    } catch (err) {
+      console.error('[replace-reviewer] email error:', err)
+    }
   }
 
   // Return updated document

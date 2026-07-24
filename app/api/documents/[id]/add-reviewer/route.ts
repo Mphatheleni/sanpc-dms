@@ -38,15 +38,14 @@ export async function POST(
   const { newReviewerId, isApprover } = await req.json()
   if (!newReviewerId) return NextResponse.json({ error: 'newReviewerId is required' }, { status: 400 })
 
-  const allowedStatuses = isApprover
-    ? ['PENDING_APPROVAL', 'FINAL_DRAFT']
-    : ['IN_REVIEW']
-  if (!allowedStatuses.includes(document.status)) {
-    return NextResponse.json(
-      { error: `Cannot add ${isApprover ? 'approver' : 'reviewer'} in current document status` },
-      { status: 400 },
-    )
+  const terminalStatuses = ['APPROVED', 'CONTROLLED', 'SUPERSEDED', 'CANCELLED']
+  if (terminalStatuses.includes(document.status)) {
+    return NextResponse.json({ error: 'Cannot modify workflow of a finalised document' }, { status: 400 })
   }
+
+  // Active statuses where the new person should be immediately notified
+  const activeStatuses = isApprover ? ['PENDING_APPROVAL', 'FINAL_DRAFT'] : ['IN_REVIEW']
+  const isActiveAdd = activeStatuses.includes(document.status)
 
   // Prevent duplicates
   const alreadyAssigned = document.reviews.some((r) => r.reviewerId === newReviewerId)
@@ -70,36 +69,37 @@ export async function POST(
       reviewerId: newReviewerId,
       order: maxOrder + 1,
       isApprover: !!isApprover,
-      status: 'IN_PROGRESS',
-      startedAt: now,
-      deadline,
+      // If document is already in an active review stage, start immediately; otherwise keep PENDING until submit
+      status: isActiveAdd ? 'IN_PROGRESS' : 'PENDING',
+      startedAt: isActiveAdd ? now : null,
+      deadline: isActiveAdd ? deadline : null,
     },
   })
 
-  const reviewToken = await signReviewToken({
-    documentId: id,
-    reviewId: newReview.id,
-    reviewerId: newReviewerId,
-    isApprover: !!isApprover,
-  })
-
-  const appUrl = process.env.APP_URL || 'http://localhost:3000'
-
-  // Await so Cloud Run doesn't kill the request before email sends
-  try {
-    await sendReviewNotification({
-      toEmail: newReviewer.email,
-      toName: newReviewer.name,
-      documentTitle: document.title,
-      documentUrl: `${appUrl}/documents/${id}`,
-      reviewUrl: `${appUrl}/review/${reviewToken}`,
-      sharePointUrl: document.sharePointUrl,
-      deadline: deadline?.toISOString() ?? null,
+  // Only email if the document is already active — otherwise they'll be notified on submit
+  if (isActiveAdd) {
+    const reviewToken = await signReviewToken({
+      documentId: id,
+      reviewId: newReview.id,
+      reviewerId: newReviewerId,
       isApprover: !!isApprover,
-      uploaderName: document.uploadedBy.name,
     })
-  } catch (err) {
-    console.error('[add-reviewer] email error:', err)
+    const appUrl = process.env.APP_URL || 'http://localhost:3000'
+    try {
+      await sendReviewNotification({
+        toEmail: newReviewer.email,
+        toName: newReviewer.name,
+        documentTitle: document.title,
+        documentUrl: `${appUrl}/documents/${id}`,
+        reviewUrl: `${appUrl}/review/${reviewToken}`,
+        sharePointUrl: document.sharePointUrl,
+        deadline: deadline?.toISOString() ?? null,
+        isApprover: !!isApprover,
+        uploaderName: document.uploadedBy.name,
+      })
+    } catch (err) {
+      console.error('[add-reviewer] email error:', err)
+    }
   }
 
   prisma.documentActivity.create({
