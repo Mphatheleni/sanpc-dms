@@ -568,7 +568,6 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
           <div className="min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-2xl font-bold text-gray-900 truncate">{doc.title}</h1>
-              <Badge variant="secondary" className="flex-shrink-0">v{doc.version}</Badge>
             </div>
             {(doc.documentNumber || doc.revision) && (
               <div className="flex items-center gap-2 mt-1">
@@ -704,6 +703,92 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
 
       {/* Overview */}
       <div className={activeTab !== 'Overview' ? 'hidden' : ''}>
+        {/* W8: All Files — main document + every attachment in one scannable list */}
+        <Card className="mb-6">
+          <h2 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+            <Paperclip className="h-4 w-4 text-gray-400" />
+            All Files
+            <span className="ml-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-normal text-gray-500">
+              {1 + attachments.length}
+            </span>
+          </h2>
+          <div className="divide-y divide-gray-50 -mx-5 px-5">
+            {/* Main document row */}
+            <div className="flex items-center gap-3 py-3 group">
+              <div className="flex-shrink-0 rounded-lg bg-sanpc-navy-light p-1.5">
+                <FileText className="h-4 w-4 text-sanpc-navy" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-900 truncate">{doc.fileName}</p>
+                <p className="text-xs text-gray-400">
+                  {doc.fileType || 'Unknown type'} · {doc.uploadedBy.name} · {formatDate(doc.createdAt)}
+                </p>
+              </div>
+              <span className="flex-shrink-0 rounded-full bg-sanpc-navy-light px-2 py-0.5 text-[10px] font-semibold text-sanpc-navy uppercase tracking-wide">
+                Main
+              </span>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <a
+                  href={`/api/documents/${doc.id}/preview`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-md px-2.5 py-1 text-xs font-medium text-sanpc-navy border border-sanpc-navy/30 hover:bg-sanpc-navy-light transition-colors"
+                >
+                  View
+                </a>
+                <a
+                  href={`/api/documents/${doc.id}/file`}
+                  download={doc.fileName}
+                  className="rounded-md px-2.5 py-1 text-xs font-medium text-gray-600 border border-gray-200 hover:bg-gray-50 transition-colors"
+                >
+                  Download
+                </a>
+              </div>
+            </div>
+            {/* Attachment rows */}
+            {attachments.map((att) => (
+              <div key={att.id} className="flex items-center gap-3 py-3 group">
+                <div className="flex-shrink-0 rounded-lg bg-teal-50 p-1.5">
+                  <Paperclip className="h-4 w-4 text-teal-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {att.label || att.fileName}
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    {att.fileType || 'Unknown type'} · {att.uploadedBy.name} · {formatDate(att.createdAt)}
+                  </p>
+                </div>
+                {att.label && (
+                  <span className="flex-shrink-0 rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-700 uppercase tracking-wide truncate max-w-[80px]">
+                    {att.label}
+                  </span>
+                )}
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <a
+                    href={`/api/documents/${doc.id}/attachments/${att.id}/preview`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-md px-2.5 py-1 text-xs font-medium text-teal-700 border border-teal-200 hover:bg-teal-50 transition-colors"
+                  >
+                    View
+                  </a>
+                  <a
+                    href={`/api/documents/${doc.id}/attachments/${att.id}/file`}
+                    download={att.fileName}
+                    className="rounded-md px-2.5 py-1 text-xs font-medium text-gray-600 border border-gray-200 hover:bg-gray-50 transition-colors"
+                  >
+                    Download
+                  </a>
+                </div>
+              </div>
+            ))}
+            {attachments.length === 0 && (
+              <p className="py-3 text-xs text-gray-400 italic">No attachments yet.</p>
+            )}
+          </div>
+        </Card>
+
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2">
             <DocumentViewer documentId={doc.id} fileName={doc.fileName} fileType={doc.fileType} />
@@ -1173,7 +1258,7 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
           <ActivityLog activities={activities} />
         </Card>
         <Card>
-          <h2 className="font-semibold text-gray-800 mb-4">Version History</h2>
+          <h2 className="font-semibold text-gray-800 mb-4">Revision History</h2>
           <VersionHistory documentId={doc.id} currentVersion={doc.version} versions={doc.versions} />
         </Card>
       </div>

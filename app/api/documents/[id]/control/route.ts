@@ -31,7 +31,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const body = await req.json()
   const { action, comments } = body as { action: string; comments?: string }
 
-  if (!['CONTROLLED', 'SUPERSEDED', 'CANCELLED'].includes(action)) {
+  if (!['CONTROLLED', 'SUPERSEDED', 'CANCELLED', 'CHANGES_REQUESTED'].includes(action)) {
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
   }
 
@@ -39,6 +39,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     where: { id },
     select: {
       id: true, title: true, status: true, uploadedById: true, documentTypeCode: true, isExcoRequired: true,
+      documentNumber: true,
       uploadedBy: { select: { id: true, name: true } },
     },
   })
@@ -65,6 +66,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     CONTROLLED: ['APPROVED', 'EXCO_PENDING'],
     SUPERSEDED: ['CONTROLLED'],
     CANCELLED: ['DRAFT', 'PENDING_REVIEW', 'IN_REVIEW', 'REVIEW_COMPLETE', 'PENDING_APPROVAL', 'APPROVED', 'CONTROLLED', 'EXCO_PENDING', 'CHANGES_REQUESTED', 'REJECTED'],
+    // W9 (route b): Document Controller can send a Controlled document back for corrections
+    CHANGES_REQUESTED: ['CONTROLLED'],
   }
 
   if (!allowedFrom[action]?.includes(document.status)) {
@@ -74,10 +77,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     )
   }
 
-  const activityActionMap: Record<string, 'CONTROLLED' | 'SUPERSEDED' | 'CANCELLED'> = {
+  const activityActionMap: Record<string, 'CONTROLLED' | 'SUPERSEDED' | 'CANCELLED' | 'STATUS_CHANGED'> = {
     CONTROLLED: 'CONTROLLED',
     SUPERSEDED: 'SUPERSEDED',
     CANCELLED: 'CANCELLED',
+    CHANGES_REQUESTED: 'STATUS_CHANGED',
   }
 
   // On CONTROLLED: set controlledAt + 40-year retention
@@ -86,6 +90,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const retentionDate = action === 'CONTROLLED'
     ? (() => { const d = new Date(now); d.setFullYear(d.getFullYear() + 40); return d.toISOString() })()
     : undefined
+
+  // W3: when marking CONTROLLED, find the currently-controlled revision of the same
+  // document number and supersede it atomically in the same transaction.
+  const previousControlled = action === 'CONTROLLED' && document.documentNumber
+    ? await prisma.document.findFirst({
+        where: { documentNumber: document.documentNumber, status: 'CONTROLLED', id: { not: id } },
+        select: { id: true, documentNumber: true },
+      })
+    : null
 
   await prisma.$transaction([
     prisma.document.update({
@@ -104,6 +117,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         details: comments ?? null,
       },
     }),
+    // W3: supersede the previous controlled revision (if any)
+    ...(previousControlled ? [
+      prisma.document.update({
+        where: { id: previousControlled.id },
+        data: { status: 'SUPERSEDED' },
+      }),
+      prisma.documentActivity.create({
+        data: {
+          documentId: previousControlled.id,
+          userId: session.userId,
+          action: 'SUPERSEDED',
+          details: `Automatically superseded when document ${document.documentNumber} was re-controlled (new revision: ${id})`,
+        },
+      }),
+    ] : []),
   ])
 
   // Notify the uploader if the action was by someone else

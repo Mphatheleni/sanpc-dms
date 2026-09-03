@@ -54,7 +54,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const doc = await prisma.document.findUnique({
     where: { id },
     select: {
-      id: true, title: true, status: true,
+      id: true, title: true, status: true, documentNumber: true,
       uploadedById: true, originatorId: true,
       uploadedBy: { select: { id: true, name: true } },
     },
@@ -76,6 +76,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     extraData.retentionDate = retention.toISOString()
   }
 
+  // W3: when manually setting CONTROLLED, supersede the existing controlled revision
+  // of the same document number (if any) in the same transaction.
+  const previousControlled = newStatus === 'CONTROLLED' && doc.documentNumber
+    ? await prisma.document.findFirst({
+        where: { documentNumber: doc.documentNumber, status: 'CONTROLLED', id: { not: id } },
+        select: { id: true },
+      })
+    : null
+
   await prisma.$transaction([
     prisma.document.update({
       where: { id },
@@ -89,6 +98,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         details: `Manual status change: ${oldStatus} → ${newStatus}${reason ? `. Reason: ${reason}` : ''}`,
       },
     }),
+    // W3: supersede the previous controlled revision atomically
+    ...(previousControlled ? [
+      prisma.document.update({
+        where: { id: previousControlled.id },
+        data: { status: 'SUPERSEDED' },
+      }),
+      prisma.documentActivity.create({
+        data: {
+          documentId: previousControlled.id,
+          userId: session.userId,
+          action: 'STATUS_CHANGED',
+          details: `Automatically superseded when document ${doc.documentNumber} was re-controlled (new revision: ${id})`,
+        },
+      }),
+    ] : []),
   ])
 
   // Notify originator for ALL DC-initiated status changes

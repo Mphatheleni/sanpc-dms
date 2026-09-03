@@ -23,6 +23,11 @@ export default async function DocumentsPage({ searchParams }: PageProps) {
   else if (session.role === 'ORIGINATOR') where.originatorId = session.userId
   // ADMIN and DOCUMENT_MANAGER see all documents
 
+  // W2: hide SUPERSEDED documents from everyone except Document Controllers and ADMIN
+  if (session.role !== 'DOCUMENT_MANAGER' && session.role !== 'ADMIN') {
+    where.NOT = { status: 'SUPERSEDED' }
+  }
+
   if (search) where.OR = [
     { title: { contains: search, mode: 'insensitive' } },
     { description: { contains: search, mode: 'insensitive' } },

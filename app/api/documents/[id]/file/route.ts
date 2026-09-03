@@ -63,6 +63,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const document = await prisma.document.findUnique({ where: { id } })
   if (!document) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+  // W2: block SUPERSEDED file download for non-DC/ADMIN users
+  if (document.status === 'SUPERSEDED' && session.role !== 'DOCUMENT_MANAGER' && session.role !== 'ADMIN') {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
   const isPdf = path.extname(document.fileName).toLowerCase() === '.pdf'
   const headers = {
     'Content-Type': document.fileType || 'application/octet-stream',

@@ -29,6 +29,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const document = await prisma.document.findUnique({ where: { id } })
   if (!document) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+  // W2: block SUPERSEDED preview for non-DC/ADMIN users
+  if (document.status === 'SUPERSEDED' && session.role !== 'DOCUMENT_MANAGER' && session.role !== 'ADMIN') {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
   const ext = getExt(document.fileName)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let buffer: any

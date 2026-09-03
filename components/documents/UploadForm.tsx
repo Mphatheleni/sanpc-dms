@@ -123,6 +123,9 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
   // Track auto-added IDs separately: originator → reviewers, authorizer → approvers
   const autoAddedReviewerId = useRef<string | null>(null)
   const autoAddedApproverId = useRef<string | null>(null)
+  // W5: track which reviewer IDs came from the previous mandatory set so we can
+  // remove only those (not manually-added reviewers) when the document type changes
+  const prevMandatoryIds = useRef<Set<string>>(new Set())
 
   // IDs of users that are mandatory for the current document type
   const mandatoryUserIds = new Set(mandatoryReviewers.map((m) => m.user.id))
@@ -134,24 +137,45 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
   const dragItemRef = useRef<string | null>(null)
   const dragOverRef = useRef<string | null>(null)
 
-  // When category changes: fetch mandatory reviewers and pre-add them to the reviewer list
+  // When category changes: fetch mandatory reviewers and pre-add them to the reviewer list.
+  // W5: preserve manually-added reviewers — only remove those from the previous mandatory set.
   useEffect(() => {
     setMandatoryReviewers([])
-    setReviewers([])
-    if (!category) return
+    if (!category) {
+      // No type selected — strip old mandatory reviewers but keep manual ones
+      const oldMandatory = prevMandatoryIds.current
+      setReviewers((prev) => prev.filter((r) => !oldMandatory.has(r.userId)))
+      prevMandatoryIds.current = new Set()
+      return
+    }
     setLoadingMandatory(true)
     fetch(`/api/mandatory-reviewers?type=${encodeURIComponent(category)}`)
       .then((r) => r.json())
       .then((data: MandatoryReviewer[]) => {
         const configs = Array.isArray(data) ? data : []
         setMandatoryReviewers(configs)
-        // Start with mandatory reviewers, then auto-add originator (DLT-12)
-        const base = configs.map((c, i) => ({
+        const newMandatoryIds = new Set(configs.map((c) => c.user.id))
+        const oldMandatoryIds = prevMandatoryIds.current
+        prevMandatoryIds.current = newMandatoryIds
+
+        // Build new mandatory base, then re-merge with manually-added reviewers
+        const mandatoryBase = configs.map((c, i) => ({
           userId: c.user.id, name: c.user.name, email: c.user.email, order: i + 1,
         }))
-        const merged = autoMerge(base, originatorUser, autoAddedReviewerId.current)
-        autoAddedReviewerId.current = originatorUser?.id ?? null
-        setReviewers(merged)
+        setReviewers((prev) => {
+          // Keep reviewers that weren't part of the old mandatory set (i.e. manually added)
+          const manual = prev.filter(
+            (r) => !oldMandatoryIds.has(r.userId) && r.userId !== autoAddedReviewerId.current,
+          )
+          // Merge: mandatory first, then manual (preserving manual order), then originator
+          const withMandatory = [...mandatoryBase]
+          for (const m of manual) {
+            if (!newMandatoryIds.has(m.userId)) withMandatory.push(m)
+          }
+          const merged = autoMerge(withMandatory, originatorUser, autoAddedReviewerId.current)
+          autoAddedReviewerId.current = originatorUser?.id ?? null
+          return merged.map((r, i) => ({ ...r, order: i + 1 }))
+        })
       })
       .catch(() => {})
       .finally(() => setLoadingMandatory(false))

@@ -10,7 +10,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params
-  const { decision, comments } = await request.json()
+  const { decision, comments: rawComments } = await request.json()
+  // W1: comment is optional — default to 'No comment' when empty/whitespace
+  const comments = rawComments?.trim() ? rawComments.trim() : 'No comment'
 
   if (!['APPROVED', 'REJECTED', 'CHANGES_REQUESTED'].includes(decision)) {
     return NextResponse.json({ error: 'Invalid decision' }, { status: 400 })

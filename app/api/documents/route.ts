@@ -45,6 +45,11 @@ export async function GET(request: NextRequest) {
   }
   // ADMIN and DOCUMENT_MANAGER see all documents
 
+  // W2: hide SUPERSEDED from everyone except Document Controllers and ADMIN
+  if (session.role !== 'DOCUMENT_MANAGER' && session.role !== 'ADMIN') {
+    where.NOT = { status: 'SUPERSEDED' }
+  }
+
   if (search) {
     where.OR = [
       { title: { contains: search } },

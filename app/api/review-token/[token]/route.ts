@@ -15,7 +15,9 @@ export async function POST(
   }
 
   const { documentId, reviewId, reviewerId, isApprover } = payload
-  const { decision, comments } = await request.json()
+  const { decision, comments: rawComments } = await request.json()
+  // W1: comment is optional — default to 'No comment' when empty/whitespace
+  const comments = rawComments?.trim() ? rawComments.trim() : 'No comment'
 
   // Validate decision
   const validDecisions = isApprover ? ['APPROVED', 'REJECTED'] : ['APPROVED']

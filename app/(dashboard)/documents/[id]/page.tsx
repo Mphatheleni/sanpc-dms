@@ -27,6 +27,10 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
         include: { uploadedBy: { select: { id: true, name: true, email: true, role: true } } },
         orderBy: { versionNumber: 'asc' },
       },
+      attachments: {
+        include: { uploadedBy: { select: { id: true, name: true, email: true } } },
+        orderBy: { createdAt: 'asc' },
+      },
       activities: {
         include: { user: { select: { name: true, email: true } } },
         orderBy: { createdAt: 'desc' },
@@ -41,6 +45,13 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
   if (
     session.role === 'ORIGINATOR' &&
     document.originatorId !== session.userId
+  ) notFound()
+
+  // W2: SUPERSEDED documents are restricted to Document Controllers and ADMIN
+  if (
+    document.status === 'SUPERSEDED' &&
+    session.role !== 'DOCUMENT_MANAGER' &&
+    session.role !== 'ADMIN'
   ) notFound()
 
   const sessionUser: SessionUser = {

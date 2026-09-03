@@ -31,6 +31,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
+  // W2: SUPERSEDED documents are restricted to Document Controllers and ADMIN
+  if (document.status === 'SUPERSEDED' && session.role !== 'DOCUMENT_MANAGER' && session.role !== 'ADMIN') {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
   prisma.documentActivity.create({
     data: { documentId: id, userId: session.userId, action: 'VIEWED' },
   }).catch(() => {})
