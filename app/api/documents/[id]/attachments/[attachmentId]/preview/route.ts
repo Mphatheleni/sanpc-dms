@@ -89,7 +89,10 @@ export async function GET(
 
     // Word — mammoth to HTML
     if (ext === 'docx' || ext === 'doc') {
-      const mammoth = await import('mammoth')
+      const mammothMod = await import('mammoth')
+      // Handle both ESM default-export and CJS named-export interop patterns
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mammoth = (mammothMod as any).default ?? mammothMod
       const result = await mammoth.convertToHtml({ buffer })
       const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
         body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; color: #111; }
@@ -105,7 +108,9 @@ export async function GET(
 
     // Excel — convert first sheet to HTML table
     if (ext === 'xlsx' || ext === 'xls') {
-      const XLSX = await import('xlsx')
+      const xlsxMod = await import('xlsx')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const XLSX = (xlsxMod as any).default ?? xlsxMod
       const workbook = XLSX.read(buffer, { type: 'buffer' })
       if (!workbook.SheetNames.length) {
         return NextResponse.json({ previewable: false, message: 'Excel file contains no sheets.' })
