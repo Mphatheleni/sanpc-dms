@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Upload, Plus, Trash2, GripVertical, ShieldCheck, Check } from 'lucide-react'
+import { Upload, Plus, Trash2, GripVertical, ShieldCheck, Check, CheckCircle } from 'lucide-react'
 import Button from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import UserPicker, { type PickableUser } from '@/components/ui/UserPicker'
@@ -55,6 +55,29 @@ interface MandatoryReviewer {
   user: { id: string; name: string; email: string; role: string }
 }
 
+/**
+ * DLT-12: Auto-merge a single user into a workflow list.
+ * - Removes the previously auto-added user when the selection changes.
+ * - Deduplicates — if already present they appear once.
+ */
+function autoMerge(
+  base: WorkflowMember[],
+  newUser: PickableUser | null,
+  prevAutoId: string | null,
+): WorkflowMember[] {
+  // Remove previous auto-added entry if it changed
+  const filtered = prevAutoId && prevAutoId !== newUser?.id
+    ? base.filter((m) => m.userId !== prevAutoId)
+    : [...base]
+
+  const existingIds = new Set(filtered.map((m) => m.userId))
+  if (newUser && !existingIds.has(newUser.id)) {
+    filtered.push({ userId: newUser.id, name: newUser.name, email: newUser.email, order: filtered.length + 1 })
+  }
+
+  return filtered.map((m, i) => ({ ...m, order: i + 1 }))
+}
+
 export default function UploadForm({ users }: { users: UserOption[] }) {
   const router = useRouter()
   const [step, setStep] = useState(1)
@@ -89,18 +112,23 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
   // Step 3: Workflow
   const [reviewers, setReviewers] = useState<WorkflowMember[]>([])
   const [approvers, setApprovers] = useState<WorkflowMember[]>([])
-  const [reviewDeadlineDays, setReviewDeadlineDays] = useState<string>('')
+  // DLT-05: 21 days is the minimum review window (for offshore staff) — do not reduce without approval
+  const [reviewDeadlineDays, setReviewDeadlineDays] = useState<string>('21')
   const [dragOverId, setDragOverId] = useState<string | null>(null)
 
   // Mandatory reviewers — person-based, auto-loaded per document type
   const [mandatoryReviewers, setMandatoryReviewers] = useState<MandatoryReviewer[]>([])
   const [loadingMandatory, setLoadingMandatory] = useState(false)
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null)
+  // Track auto-added IDs separately: originator → reviewers, authorizer → approvers
+  const autoAddedReviewerId = useRef<string | null>(null)
+  const autoAddedApproverId = useRef<string | null>(null)
 
   // IDs of users that are mandatory for the current document type
   const mandatoryUserIds = new Set(mandatoryReviewers.map((m) => m.user.id))
 
-  const reviewerUsers = users
+  // F-1.7: Document Controller (DOCUMENT_MANAGER) must not be a reviewer
+  const reviewerUsers = users.filter((u) => u.role !== 'DOCUMENT_MANAGER')
   const approverUsers = users
   const docTypeCode = SANPC_DOC_TYPES.find((t) => t.label === category)?.code ?? ''
   const dragItemRef = useRef<string | null>(null)
@@ -117,15 +145,38 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
       .then((data: MandatoryReviewer[]) => {
         const configs = Array.isArray(data) ? data : []
         setMandatoryReviewers(configs)
-        setReviewers(
-          configs.map((c, i) => ({
-            userId: c.user.id, name: c.user.name, email: c.user.email, order: i + 1,
-          }))
-        )
+        // Start with mandatory reviewers, then auto-add originator (DLT-12)
+        const base = configs.map((c, i) => ({
+          userId: c.user.id, name: c.user.name, email: c.user.email, order: i + 1,
+        }))
+        const merged = autoMerge(base, originatorUser, autoAddedReviewerId.current)
+        autoAddedReviewerId.current = originatorUser?.id ?? null
+        setReviewers(merged)
       })
       .catch(() => {})
       .finally(() => setLoadingMandatory(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category])
+
+  // DLT-12: Originator → Reviewers (replace previous auto-added entry on change)
+  useEffect(() => {
+    setReviewers((prev) => {
+      const merged = autoMerge(prev, originatorUser, autoAddedReviewerId.current)
+      autoAddedReviewerId.current = originatorUser?.id ?? null
+      return merged
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [originatorUser?.id])
+
+  // DLT-12: Approved By → Approvers (replace previous auto-added entry on change)
+  useEffect(() => {
+    setApprovers((prev) => {
+      const merged = autoMerge(prev, authorizerUser, autoAddedApproverId.current)
+      autoAddedApproverId.current = authorizerUser?.id ?? null
+      return merged
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authorizerUser?.id])
 
   function handleDragReorder(setList: React.Dispatch<React.SetStateAction<WorkflowMember[]>>) {
     const dragId = dragItemRef.current
@@ -144,11 +195,25 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
     dragOverRef.current = null
   }
 
+  // DLT-02: primary document must be Word (.docx/.doc). PDF goes in Attachments only.
+  function validatePrimaryFile(f: File): string | null {
+    const ext = f.name.split('.').pop()?.toLowerCase()
+    if (ext === 'pdf') {
+      return 'The primary document must be a Word file (.docx or .doc). PDF versions belong in the Attachments section — upload the signed PDF there once the document is Approved.'
+    }
+    return null
+  }
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setDragOver(false)
     const dropped = e.dataTransfer.files[0]
-    if (dropped) setFile(dropped)
+    if (dropped) {
+      const err = validatePrimaryFile(dropped)
+      if (err) { setFileError(err); return }
+      setFileError('')
+      setFile(dropped)
+    }
   }, [])
 
   async function uploadFile() {
@@ -381,11 +446,25 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
               </div>
             ) : (
               <>
-                <p className="font-medium text-gray-600">Drop a file here or click to browse</p>
-                <p className="text-sm text-gray-400 mt-1">Any file type supported</p>
+                <p className="font-medium text-gray-600">Drop a Word file here or click to browse</p>
+                <p className="text-sm text-gray-400 mt-1">.docx or .doc only — signed PDFs go in Attachments after approval</p>
               </>
             )}
-            <input id="file-input" type="file" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+            <input
+              id="file-input"
+              type="file"
+              accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0] ?? null
+                if (f) {
+                  const err = validatePrimaryFile(f)
+                  if (err) { setFileError(err); e.target.value = ''; return }
+                  setFileError('')
+                }
+                setFile(f)
+              }}
+            />
           </div>
           {fileError && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -401,7 +480,15 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
       {/* ── Step 2: Details ─────────────────────────────────────────────── */}
       {step === 2 && (
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-gray-800">Document Details</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-gray-800">Document Details</h2>
+            {uploadResult && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 border border-green-200 px-3 py-1 text-xs font-medium text-green-700">
+                <CheckCircle className="h-3.5 w-3.5" />
+                {uploadResult.fileName}
+              </span>
+            )}
+          </div>
           <Input label="Title *" value={title} onChange={(e) => setTitle(e.target.value)} required />
           <Input
             label="Purpose (one-line statement)"
@@ -437,12 +524,12 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
 
           {/* People */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <UserPicker users={users} value={originatorUser}
+            <UserPicker key="originator-picker" users={users} value={originatorUser}
               onChange={(u) => { setOriginatorUser(u); if (u) setOriginator(u.name) }}
               label="Originator" placeholder="Search by name or email…" />
-            <UserPicker users={users} value={authorizerUser}
+            <UserPicker key="authorizer-picker" users={users} value={authorizerUser}
               onChange={(u) => { setAuthorizerUser(u); if (u) setAuthorisedBy(u.name) }}
-              label="Authorised By" placeholder="Search by name or email…" />
+              label="Approved By" placeholder="Search by name or email…" />
           </div>
 
           {/* Tags — FR-2.1/2.2 */}
@@ -483,8 +570,16 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
       {step === 3 && (
         <div className="space-y-6">
           <div>
-            <h2 className="text-lg font-semibold text-gray-800">Review Workflow</h2>
-            <p className="text-sm text-gray-500 mt-1">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-800">Review Workflow</h2>
+              {uploadResult && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 border border-green-200 px-3 py-1 text-xs font-medium text-green-700">
+                  <CheckCircle className="h-3.5 w-3.5" />
+                  {uploadResult.fileName}
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-gray-500 mt-1 mb-0">
               All reviewers receive the document at the same time. Once all approve, it moves to approvers.
             </p>
           </div>

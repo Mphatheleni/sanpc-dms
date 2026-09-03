@@ -26,6 +26,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const document = await prisma.document.findUnique({ where: { id }, include: docInclude })
   if (!document) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+  // ORIGINATOR can only access documents they originated
+  if (session.role === 'ORIGINATOR' && document.originatorId !== session.userId) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
   prisma.documentActivity.create({
     data: { documentId: id, userId: session.userId, action: 'VIEWED' },
   }).catch(() => {})
@@ -62,7 +67,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
 
   const body = await request.json()
-  const { title, description, category, tags, content } = body
+  const { title, description, category, tags } = body
 
   const updated = await prisma.document.update({
     where: { id },
@@ -71,7 +76,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       ...(description !== undefined && { description }),
       ...(category !== undefined && { category }),
       ...(tags !== undefined && { tags }),
-      ...(content !== undefined && { content }),
     },
     include: docInclude,
   })
@@ -89,7 +93,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const document = await prisma.document.findUnique({
     where: { id },
-    select: { title: true, uploadedById: true },
+    select: {
+      title: true,
+      status: true,
+      uploadedById: true,
+      reviews: {
+        where: { reviewerId: session.userId },
+        select: { status: true },
+      },
+    },
   })
 
   const comment = await prisma.documentComment.create({
@@ -99,11 +111,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   // Notify doc owner (if commenter is not the owner)
   if (document && document.uploadedById !== session.userId) {
+    // Check if commenter already completed their review (post-review comment)
+    const completedStatuses = ['APPROVED', 'CHANGES_REQUESTED', 'REJECTED']
+    const hasCompletedReview = document.reviews.some((r) => completedStatuses.includes(r.status))
+    const docStillActive = ['IN_REVIEW', 'UPDATING', 'PENDING_APPROVAL', 'FINAL_DRAFT'].includes(document.status)
+    const isPostReviewComment = hasCompletedReview && docStillActive
+
     createNotification(
       document.uploadedById,
       'COMMENT_ADDED',
-      `New Comment: ${document.title}`,
-      `${session.name} commented on "${document.title}".`,
+      isPostReviewComment ? `Post-Review Comment: ${document.title}` : `New Comment: ${document.title}`,
+      isPostReviewComment
+        ? `${session.name} added a comment after completing their review of "${document.title}".`
+        : `${session.name} commented on "${document.title}".`,
       id,
     )
   }

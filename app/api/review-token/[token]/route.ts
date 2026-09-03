@@ -83,7 +83,7 @@ export async function POST(
     })
 
     const pendingReviewers = document.reviews.filter(
-      (r) => !r.isApprover && r.id !== reviewId && r.status !== 'APPROVED'
+      (r) => !r.isApprover && r.id !== reviewId && r.status !== 'APPROVED' && r.status !== 'REMOVED'
     )
 
     if (pendingReviewers.length === 0) {
@@ -136,7 +136,7 @@ export async function POST(
     })
 
     const pendingApprovers = document.reviews.filter(
-      (r) => r.isApprover && r.id !== reviewId && r.status !== 'APPROVED'
+      (r) => r.isApprover && r.id !== reviewId && r.status !== 'APPROVED' && r.status !== 'REMOVED'
     )
 
     if (pendingApprovers.length === 0) {

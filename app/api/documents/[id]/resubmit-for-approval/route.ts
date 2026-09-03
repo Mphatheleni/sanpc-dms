@@ -43,7 +43,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: 'Only rejected documents can be resubmitted for approval' }, { status: 400 })
   }
 
-  const approverReviews = document.reviews.filter((r) => r.isApprover)
+  const approverReviews = document.reviews.filter((r) => r.isApprover && r.status !== 'REMOVED')
   if (approverReviews.length === 0) {
     return NextResponse.json({ error: 'No approvers assigned to this document' }, { status: 400 })
   }

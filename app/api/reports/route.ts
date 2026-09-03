@@ -102,11 +102,32 @@ export async function GET() {
     avgDays: r.completed > 0 ? Math.round((r.totalDays / r.completed) * 10) / 10 : null,
   }))
 
+  // Status change audit trail (last 200 changes, most recent first)
+  const rawStatusChanges = await prisma.documentActivity.findMany({
+    where: { action: 'STATUS_CHANGED' },
+    include: {
+      user: { select: { name: true, email: true } },
+      document: { select: { id: true, title: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 200,
+  })
+
+  const statusChanges = rawStatusChanges.map((a) => ({
+    documentId: a.document.id,
+    documentTitle: a.document.title,
+    changedBy: a.user.name,
+    changedByEmail: a.user.email,
+    details: a.details ?? '',
+    changedAt: a.createdAt.toISOString(),
+  }))
+
   return NextResponse.json({
     statusCounts,
     categoryCounts,
     monthlySubmissions,
     overdueList,
     reviewerStats,
+    statusChanges,
   })
 }

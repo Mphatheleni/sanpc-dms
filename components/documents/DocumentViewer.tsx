@@ -12,7 +12,7 @@ interface DocumentViewerProps {
 const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'])
 const VIDEO_EXTS = new Set(['mp4', 'webm', 'ogg'])
 const TEXT_EXTS = new Set(['txt', 'md', 'csv', 'json', 'xml', 'yaml', 'yml', 'log'])
-const HTML_EXTS = new Set(['docx', 'xlsx', 'xls'])
+const HTML_EXTS = new Set(['docx', 'doc', 'xlsx', 'xls'])
 
 function getExt(fileName: string): string {
   return fileName.split('.').pop()?.toLowerCase() ?? ''

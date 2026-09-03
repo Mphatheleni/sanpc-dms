@@ -24,6 +24,7 @@ const roleLabels: Record<string, string> = {
   DOCUMENT_MANAGER: 'DC',
   REVIEWER: 'Reviewer',
   APPROVER: 'Approver',
+  ORIGINATOR: 'Originator',
 }
 
 const roleColors: Record<string, string> = {
@@ -31,6 +32,7 @@ const roleColors: Record<string, string> = {
   DOCUMENT_MANAGER: '#1C3557',
   REVIEWER: '#7C3AED',
   APPROVER: '#16A34A',
+  ORIGINATOR: '#D97706',
 }
 
 function initials(name: string) {
@@ -144,6 +146,9 @@ export default function UserPicker({ users, value, onChange, placeholder = 'Sear
             onChange={(e) => { setQuery(e.target.value); openWith() }}
             onFocus={openWith}
             placeholder={placeholder}
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
             className="w-full rounded-lg border border-gray-200 bg-gray-50 pl-9 pr-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 transition focus:border-[#1C3557] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1C3557]/10"
           />
         </div>

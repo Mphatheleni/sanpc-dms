@@ -24,6 +24,7 @@ const roleLabels: Record<string, string> = {
   DOCUMENT_MANAGER: 'Document Controller',
   REVIEWER:         'Reviewer',
   APPROVER:         'Approver',
+  ORIGINATOR:       'Originator',
 }
 
 const roleColors: Record<string, { bg: string; text: string }> = {
@@ -31,6 +32,7 @@ const roleColors: Record<string, { bg: string; text: string }> = {
   DOCUMENT_MANAGER: { bg: '#E8EDF4', text: '#1C3557' },
   REVIEWER:         { bg: '#EDE9FE', text: '#5B21B6' },
   APPROVER:         { bg: '#DCFCE7', text: '#166534' },
+  ORIGINATOR:       { bg: '#FEF3C7', text: '#92400E' },
 }
 
 const ALL_STATUSES: DocumentStatus[] = [
@@ -55,8 +57,30 @@ export default async function DashboardPage() {
     }) as typeof myDocs
   }
 
+  if (session.role === 'ORIGINATOR') {
+    myDocs = await prisma.document.findMany({
+      where: { originatorId: session.userId },
+      orderBy: { updatedAt: 'desc' },
+      take: 8,
+      select: { id: true, title: true, status: true, updatedAt: true, category: true },
+    }) as typeof myDocs
+  }
+
+  // Document controllers need to act on docs awaiting submission, re-upload, or re-approval
+  if (session.role === 'DOCUMENT_MANAGER' || session.role === 'ADMIN') {
+    const dmPending = await prisma.document.findMany({
+      where: {
+        status: { in: ['REGISTERED', 'REVIEW_COMPLETE', 'UPDATING', 'REJECTED'] },
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 10,
+      select: { id: true, title: true, status: true, updatedAt: true },
+    }) as typeof pendingAction
+    pendingAction = [...pendingAction, ...dmPending]
+  }
+
   if (session.role === 'REVIEWER' || session.role === 'ADMIN') {
-    pendingAction = await prisma.document.findMany({
+    const reviewerDocs = await prisma.document.findMany({
       where: {
         status: 'IN_REVIEW',
         reviews: { some: { reviewerId: session.userId, status: 'IN_PROGRESS' } },
@@ -65,6 +89,7 @@ export default async function DashboardPage() {
       take: 10,
       select: { id: true, title: true, status: true, updatedAt: true },
     }) as typeof pendingAction
+    pendingAction = [...pendingAction, ...reviewerDocs]
   }
 
   if (session.role === 'APPROVER' || session.role === 'ADMIN') {
@@ -94,7 +119,10 @@ export default async function DashboardPage() {
   }
 
   // Stats
-  const scopeWhere = (session.role === 'ADMIN' || session.role === 'DOCUMENT_MANAGER') ? {} : { uploadedById: session.userId }
+  const scopeWhere =
+    (session.role === 'ADMIN' || session.role === 'DOCUMENT_MANAGER') ? {} :
+    session.role === 'ORIGINATOR' ? { originatorId: session.userId } :
+    { uploadedById: session.userId }
   const totalDocs = await prisma.document.count({ where: scopeWhere })
   const approvedDocs = await prisma.document.count({ where: { ...scopeWhere, status: 'APPROVED' } })
 
@@ -167,22 +195,26 @@ export default async function DashboardPage() {
           icon={FileText}
           label={session.role === 'ADMIN' ? 'Total Documents' : 'My Documents'}
           value={totalDocs}
+          href="/documents"
         />
         <StatsCard
           icon={CheckCircle}
           label="Approved"
           value={approvedDocs}
+          href="/documents?status=APPROVED"
         />
         <StatsCard
           icon={AlertCircle}
           label="Pending My Action"
           value={pendingAction.length}
+          href="/documents"
         />
         <StatsCard
           icon={AlertTriangle}
           label="Overdue Reviews"
           value={overdueReviews}
           alertColor={overdueReviews > 0}
+          href={session.role === 'ADMIN' || session.role === 'DOCUMENT_MANAGER' ? '/reports' : '/documents'}
         />
       </div>
 

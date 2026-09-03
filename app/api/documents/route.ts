@@ -29,9 +29,19 @@ export async function GET(request: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const where: any = {}
 
-  if (session.role !== 'ADMIN' && session.role !== 'DOCUMENT_MANAGER') {
-    // Reviewers/approvers only see documents assigned to them
-    where.reviews = { some: { reviewerId: session.userId } }
+  if (session.role === 'ORIGINATOR') {
+    // ORIGINATOR sees only documents they originated
+    where.originatorId = session.userId
+  } else if (session.role !== 'ADMIN' && session.role !== 'DOCUMENT_MANAGER') {
+    // Reviewers/approvers see documents assigned to them OR where they are the originator
+    where.AND = [
+      {
+        OR: [
+          { reviews: { some: { reviewerId: session.userId } } },
+          { originatorId: session.userId },
+        ],
+      },
+    ]
   }
   // ADMIN and DOCUMENT_MANAGER see all documents
 

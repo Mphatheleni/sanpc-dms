@@ -5,7 +5,16 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell, Legend,
 } from 'recharts'
-import { Download, AlertTriangle, FileText, CheckCircle, Clock, TrendingUp } from 'lucide-react'
+import { Download, AlertTriangle, FileText, CheckCircle, Clock, TrendingUp, ArrowRightLeft } from 'lucide-react'
+
+interface StatusChangeEntry {
+  documentId: string
+  documentTitle: string
+  changedBy: string
+  changedByEmail: string
+  details: string
+  changedAt: string
+}
 
 interface ReportsData {
   statusCounts: { status: string; count: number }[]
@@ -13,6 +22,7 @@ interface ReportsData {
   monthlySubmissions: { month: string; count: number }[]
   overdueList: { id: string; title: string; reviewerName: string; deadline: string | null; daysOverdue: number }[]
   reviewerStats: { name: string; assigned: number; completed: number; avgDays: number | null }[]
+  statusChanges: StatusChangeEntry[]
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -203,6 +213,50 @@ export default function ReportsClient() {
           </div>
         </div>
       )}
+
+      {/* Status Change Audit Trail */}
+      <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-hidden">
+        <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
+          <ArrowRightLeft className="h-4 w-4 text-orange-500" />
+          <h2 className="font-semibold text-gray-800">Status Change Audit Trail</h2>
+          <span className="ml-auto text-xs text-gray-400">{data.statusChanges.length} records (last 200)</span>
+        </div>
+        {data.statusChanges.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-gray-400 italic">No status changes recorded yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50/50">
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Document</th>
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Changed By</th>
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Details</th>
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">When</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {data.statusChanges.map((entry, i) => (
+                  <tr key={i} className="hover:bg-orange-50/20 transition-colors">
+                    <td className="px-5 py-3">
+                      <a href={`/documents/${entry.documentId}`} className="font-medium text-gray-800 hover:text-sanpc-navy hover:underline line-clamp-1">
+                        {entry.documentTitle}
+                      </a>
+                    </td>
+                    <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{entry.changedBy}</td>
+                    <td className="px-5 py-3 text-gray-500 italic text-xs max-w-xs truncate">{entry.details}</td>
+                    <td className="px-5 py-3 text-gray-400 whitespace-nowrap text-xs">
+                      {new Date(entry.changedAt).toLocaleString('en-ZA', {
+                        day: '2-digit', month: 'short', year: 'numeric',
+                        hour: '2-digit', minute: '2-digit',
+                      })}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {/* Reviewer Performance Table */}
       {data.reviewerStats.length > 0 && (

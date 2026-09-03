@@ -47,7 +47,15 @@ export async function POST(
     return NextResponse.json({ error: 'Cannot remove a reviewer who has already completed their review' }, { status: 400 })
   }
 
-  await prisma.documentReview.delete({ where: { id: reviewId } })
+  if (existingReview.status === 'REMOVED') {
+    return NextResponse.json({ error: 'Reviewer has already been removed' }, { status: 400 })
+  }
+
+  // Mark as REMOVED (keep the record for compliance audit trail — do NOT delete)
+  await prisma.documentReview.update({
+    where: { id: reviewId },
+    data: { status: 'REMOVED', reviewedAt: new Date() },
+  })
 
   // Only notify if the reviewer was already active (IN_PROGRESS) — PENDING means they were never emailed
   if (existingReview.status === 'IN_PROGRESS') {
@@ -69,7 +77,7 @@ export async function POST(
       documentId: id,
       userId: session.userId,
       action: 'AMENDED',
-      details: `${existingReview.isApprover ? 'Approver' : 'Reviewer'} ${existingReview.reviewer.name} removed from workflow`,
+      details: `${existingReview.isApprover ? 'Approver' : 'Reviewer'} ${existingReview.reviewer.name} removed from workflow (audit record retained)`,
     },
   }).catch(() => {})
 

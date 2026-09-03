@@ -5,20 +5,24 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   FileText, LayoutGrid, List, Download, Trash2, Eye,
-  ChevronLeft, ChevronRight, MoreHorizontal, FilePlus,
+  ChevronLeft, ChevronRight, MoreHorizontal, FilePlus, Paperclip,
+  CheckCircle2, Clock,
 } from 'lucide-react'
 import StatusBadge from '@/components/documents/StatusBadge'
 import DocumentCard from '@/components/documents/DocumentCard'
-import type { Document } from '@/types'
+import type { Document, DocumentReview } from '@/types'
 
 function formatDate(date: string) {
   return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+function avatarInitials(name: string) {
+  return name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+}
+
+/** All assigned approvers that have not been removed */
+function getApprovers(doc: Document): DocumentReview[] {
+  return (doc.reviews ?? []).filter((r) => r.isApprover && r.status !== 'REMOVED')
 }
 
 const PAGE_SIZE = 10
@@ -73,14 +77,16 @@ export default function DocumentsClient({ documents, canCreate, userId, userRole
 
   if (documents.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-        <FilePlus className="h-14 w-14 mb-4 opacity-20" />
-        <p className="text-base font-medium text-gray-500 mb-1">No documents found</p>
-        <p className="text-sm text-gray-400 mb-4">Try adjusting your search or filters</p>
+      <div className="flex flex-col items-center justify-center py-24 rounded-xl border border-dashed border-gray-200 bg-white text-gray-400">
+        <div className="rounded-2xl bg-gray-50 p-5 mb-4">
+          <FilePlus className="h-10 w-10 text-gray-300" />
+        </div>
+        <p className="text-base font-semibold text-gray-500 mb-1">No documents found</p>
+        <p className="text-sm text-gray-400 mb-5">Try adjusting your search or filter criteria</p>
         {canCreate && (
           <Link
             href="/documents/new"
-            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-all shadow-sm hover:shadow-md"
+            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-all shadow-sm hover:shadow-md active:scale-95"
             style={{ backgroundColor: '#1C3557' }}
           >
             <FilePlus className="h-4 w-4" />
@@ -94,9 +100,15 @@ export default function DocumentsClient({ documents, canCreate, userId, userRole
   return (
     <div>
       {/* View toggle + count */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-3">
         <p className="text-sm text-gray-500">
-          Showing <span className="font-medium text-gray-700">{(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, documents.length)}</span> of <span className="font-medium text-gray-700">{documents.length}</span> documents
+          Showing{' '}
+          <span className="font-medium text-gray-700">
+            {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, documents.length)}
+          </span>
+          {' '}of{' '}
+          <span className="font-medium text-gray-700">{documents.length}</span>{' '}
+          document{documents.length !== 1 ? 's' : ''}
         </p>
         <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white p-1">
           <button
@@ -121,61 +133,144 @@ export default function DocumentsClient({ documents, canCreate, userId, userRole
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-100 bg-gray-50/50">
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Document</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden sm:table-cell">Status</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Category</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">Uploaded By</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">Date</th>
-                  <th className="px-5 py-3 w-10" />
+                <tr className="border-b border-gray-100 bg-gray-50/70">
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Document</th>
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden sm:table-cell">Status</th>
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Category</th>
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">Doc Control</th>
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden xl:table-cell">Originator</th>
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden xl:table-cell">Approver(s)</th>
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">Updated</th>
+                  <th className="px-5 py-3.5 w-12" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {pageDocs.map((doc) => (
-                  <tr
-                    key={doc.id}
-                    className="hover:bg-gray-50 transition-colors cursor-pointer group"
-                    onClick={() => router.push(`/documents/${doc.id}`)}
-                  >
-                    <td className="px-5 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="flex-shrink-0 rounded-lg bg-sanpc-navy-light p-2">
-                          <FileText className="h-4 w-4 text-sanpc-navy" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-medium text-gray-900 truncate max-w-[200px]">{doc.title}</p>
-                          {doc.documentNumber ? (
-                            <p className="text-xs font-mono text-sanpc-navy truncate max-w-[180px]">
-                              {doc.documentNumber} · Rev {doc.revision ?? '00'}
+                {pageDocs.map((doc) => {
+                  const approvers = getApprovers(doc)
+                  const allApproved = approvers.length > 0 && approvers.every((r) => r.status === 'APPROVED')
+                  const approverNames = approvers.map((r) => r.reviewer.name)
+                  const approverLabel =
+                    approverNames.length === 0
+                      ? null
+                      : approverNames.length <= 2
+                        ? approverNames.join(', ')
+                        : `${approverNames[0]}, +${approverNames.length - 1} more`
+
+                  const originatorName = doc.originatorUser?.name ?? doc.originator ?? null
+
+                  return (
+                    <tr
+                      key={doc.id}
+                      className="hover:bg-blue-50/30 transition-colors cursor-pointer group"
+                      onClick={() => router.push(`/documents/${doc.id}`)}
+                    >
+                      {/* Document cell */}
+                      <td className="px-5 py-4">
+                        <div className="flex items-start gap-3">
+                          <div className="flex-shrink-0 mt-0.5 rounded-lg bg-sanpc-navy-light p-2 group-hover:bg-blue-100/70 transition-colors">
+                            <FileText className="h-4 w-4 text-sanpc-navy" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-gray-900 truncate max-w-[220px] group-hover:text-sanpc-navy transition-colors">
+                              {doc.title}
                             </p>
-                          ) : doc.description ? (
-                            <p className="text-xs text-gray-400 truncate max-w-[180px]">{doc.description}</p>
-                          ) : null}
+                            {doc.documentNumber ? (
+                              <p className="text-xs font-mono text-sanpc-navy/60 truncate max-w-[200px]">
+                                {doc.documentNumber} · Rev {doc.revision ?? '00'}
+                              </p>
+                            ) : doc.description ? (
+                              <p className="text-xs text-gray-400 truncate max-w-[200px]">{doc.description}</p>
+                            ) : null}
+                            {/* Originator shown inline on screens narrower than xl (where the column is hidden) */}
+                            {originatorName && (
+                              <p className="text-xs text-gray-400 truncate max-w-[200px] xl:hidden mt-0.5">
+                                <span className="text-gray-300">Originator:</span>{' '}{originatorName}
+                              </p>
+                            )}
+                            {/* Attachment indicator */}
+                            {(doc as unknown as { _count?: { attachments: number } })._count?.attachments ? (
+                              <Link
+                                href={`/documents/${doc.id}#attachments`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="inline-flex items-center gap-1 mt-0.5 text-[10px] text-teal-600 hover:text-teal-800 font-medium"
+                                title="View attachments"
+                              >
+                                <Paperclip className="h-3 w-3" />
+                                {(doc as unknown as { _count?: { attachments: number } })._count!.attachments}{' '}
+                                attachment{(doc as unknown as { _count?: { attachments: number } })._count!.attachments !== 1 ? 's' : ''}
+                              </Link>
+                            ) : null}
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-5 py-4 hidden sm:table-cell">
-                      <StatusBadge status={doc.status} />
-                    </td>
-                    <td className="px-5 py-4 hidden md:table-cell">
-                      <span className="text-xs text-gray-500 truncate max-w-[120px] block">{doc.category ?? '—'}</span>
-                    </td>
-                    <td className="px-5 py-4 hidden lg:table-cell">
-                      <span className="text-xs text-gray-600">{doc.uploadedBy.name}</span>
-                    </td>
-                    <td className="px-5 py-4 hidden lg:table-cell">
-                      <span className="text-xs text-gray-400">{formatDate(doc.updatedAt)}</span>
-                    </td>
-                    <td className="px-5 py-4" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        onClick={(e) => toggleMenu(doc.id, e)}
-                        className="rounded-md p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-                      >
-                        <MoreHorizontal className="h-4 w-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+
+                      {/* Status */}
+                      <td className="px-5 py-4 hidden sm:table-cell">
+                        <StatusBadge status={doc.status} />
+                      </td>
+
+                      {/* Category */}
+                      <td className="px-5 py-4 hidden md:table-cell">
+                        <span className="text-xs text-gray-500 truncate max-w-[120px] block">{doc.category ?? '—'}</span>
+                      </td>
+
+                      {/* Doc Control — person who uploaded */}
+                      <td className="px-5 py-4 hidden lg:table-cell">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-sanpc-navy-light text-[9px] font-bold text-sanpc-navy">
+                            {avatarInitials(doc.uploadedBy.name)}
+                          </span>
+                          <span className="text-xs text-gray-600 truncate max-w-[110px]">{doc.uploadedBy.name}</span>
+                        </div>
+                      </td>
+
+                      {/* Originator */}
+                      <td className="px-5 py-4 hidden xl:table-cell">
+                        {originatorName ? (
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-amber-50 text-[9px] font-bold text-amber-700">
+                              {avatarInitials(originatorName)}
+                            </span>
+                            <span className="text-xs text-gray-600 truncate max-w-[110px]">{originatorName}</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-300">—</span>
+                        )}
+                      </td>
+
+                      {/* Approver(s) */}
+                      <td className="px-5 py-4 hidden xl:table-cell">
+                        {approverLabel ? (
+                          <div className="flex items-center gap-1.5">
+                            {allApproved
+                              ? <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-green-500" />
+                              : <Clock className="h-3.5 w-3.5 flex-shrink-0 text-amber-400" />
+                            }
+                            <span className="text-xs text-gray-700 truncate max-w-[110px]">{approverLabel}</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-300">—</span>
+                        )}
+                      </td>
+
+                      {/* Updated date */}
+                      <td className="px-5 py-4 hidden lg:table-cell">
+                        <span className="text-xs text-gray-400 whitespace-nowrap">{formatDate(doc.updatedAt)}</span>
+                      </td>
+
+                      {/* Row actions */}
+                      <td className="px-5 py-4" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={(e) => toggleMenu(doc.id, e)}
+                          className="rounded-md p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                          aria-label="Document actions"
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -189,7 +284,7 @@ export default function DocumentsClient({ documents, canCreate, userId, userRole
         </div>
       )}
 
-      {/* Fixed-position action menu — escapes overflow:hidden/overflow-x-auto parents */}
+      {/* Fixed-position action menu — escapes overflow:hidden parents */}
       {openMenu && menuPos && (() => {
         const doc = pageDocs.find((d) => d.id === openMenu)
         if (!doc) return null
@@ -197,7 +292,7 @@ export default function DocumentsClient({ documents, canCreate, userId, userRole
           <div
             ref={menuRef}
             style={{ position: 'fixed', top: menuPos.top, right: menuPos.right, zIndex: 9999 }}
-            className="w-36 rounded-lg border border-gray-200 bg-white shadow-lg py-1"
+            className="w-36 rounded-lg border border-gray-100 bg-white shadow-xl py-1 ring-1 ring-black/5"
             onMouseDown={(e) => e.stopPropagation()}
           >
             <Link
@@ -205,7 +300,7 @@ export default function DocumentsClient({ documents, canCreate, userId, userRole
               className="flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 transition-colors"
               onClick={() => { setOpenMenu(null); setMenuPos(null) }}
             >
-              <Eye className="h-3.5 w-3.5" />
+              <Eye className="h-3.5 w-3.5 text-gray-400" />
               View
             </Link>
             <a
@@ -214,17 +309,20 @@ export default function DocumentsClient({ documents, canCreate, userId, userRole
               className="flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 transition-colors"
               onClick={() => { setOpenMenu(null); setMenuPos(null) }}
             >
-              <Download className="h-3.5 w-3.5" />
+              <Download className="h-3.5 w-3.5 text-gray-400" />
               Download
             </a>
             {canDelete(doc) && (
-              <button
-                onClick={(e) => handleDelete(doc, e)}
-                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50 transition-colors"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Delete
-              </button>
+              <>
+                <div className="my-1 border-t border-gray-100" />
+                <button
+                  onClick={(e) => handleDelete(doc, e)}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50 transition-colors"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete
+                </button>
+              </>
             )}
           </div>
         )
@@ -232,15 +330,15 @@ export default function DocumentsClient({ documents, canCreate, userId, userRole
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-4">
+        <div className="flex items-center justify-between mt-5">
           <p className="text-xs text-gray-400">
-            Page {page} of {totalPages}
+            Page <span className="font-medium text-gray-600">{page}</span> of <span className="font-medium text-gray-600">{totalPages}</span>
           </p>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page === 1}
-              className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
               Prev
@@ -251,7 +349,11 @@ export default function DocumentsClient({ documents, canCreate, userId, userRole
                 <button
                   key={p}
                   onClick={() => setPage(p)}
-                  className={`h-8 w-8 rounded-lg text-xs font-medium transition-colors ${p === page ? 'text-white' : 'border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                  className={`h-8 w-8 rounded-lg text-xs font-medium transition-colors ${
+                    p === page
+                      ? 'text-white shadow-sm'
+                      : 'border border-gray-200 text-gray-600 hover:bg-gray-50'
+                  }`}
                   style={p === page ? { backgroundColor: '#1C3557' } : {}}
                 >
                   {p}
@@ -261,7 +363,7 @@ export default function DocumentsClient({ documents, canCreate, userId, userRole
             <button
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
-              className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               Next
               <ChevronRight className="h-3.5 w-3.5" />

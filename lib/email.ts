@@ -1,51 +1,32 @@
 /**
- * Email notifications via Microsoft Graph API (delegated / ROPC flow).
+ * Email notifications via SMTP (Office 365 / smtp.office365.com:587 STARTTLS).
  *
- * Uses the mail sender's own credentials to obtain a delegated access token,
- * then sends via /me/sendMail — requires only Mail.Send Delegated permission.
+ * Uses nodemailer with the sender's mailbox credentials — no Azure AD
+ * application permissions required.
  *
  * Required env vars:
- *   AZURE_TENANT_ID     — Azure AD tenant ID
- *   AZURE_CLIENT_ID     — App registration client ID
- *   AZURE_CLIENT_SECRET — App registration client secret
- *   MAIL_SENDER         — M365 mailbox to send FROM (e.g. noreply@sa-npc.co.za)
- *   MAIL_PASSWORD       — Password for that mailbox
- *   APP_URL             — Public base URL of this app (used in email links)
+ *   MAIL_SENDER   — M365 mailbox address (e.g. noreply@sa-npc.co.za)
+ *   MAIL_PASSWORD — Mailbox password (stored in Cloud Secret Manager)
+ *   APP_URL       — Public base URL of this app (used in email links)
  */
 
-const GRAPH = 'https://graph.microsoft.com/v1.0'
+import nodemailer from 'nodemailer'
 
 export function isEmailConfigured(): boolean {
-  return !!(
-    process.env.AZURE_TENANT_ID &&
-    process.env.AZURE_CLIENT_ID &&
-    process.env.AZURE_CLIENT_SECRET &&
-    process.env.MAIL_SENDER &&
-    process.env.MAIL_PASSWORD
-  )
+  return !!(process.env.MAIL_SENDER && process.env.MAIL_PASSWORD)
 }
 
-async function getGraphToken(): Promise<string> {
-  const res = await fetch(
-    `https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID}/oauth2/v2.0/token`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type:    'password',
-        client_id:     process.env.AZURE_CLIENT_ID!,
-        client_secret: process.env.AZURE_CLIENT_SECRET!,
-        username:      process.env.MAIL_SENDER!,
-        password:      process.env.MAIL_PASSWORD!,
-        scope:         'https://graph.microsoft.com/Mail.Send offline_access',
-      }),
+function createTransport() {
+  return nodemailer.createTransport({
+    host: 'smtp.office365.com',
+    port: 587,
+    secure: false, // STARTTLS
+    auth: {
+      user: process.env.MAIL_SENDER!,
+      pass: process.env.MAIL_PASSWORD!,
     },
-  )
-  const data = await res.json()
-  if (!data.access_token) {
-    throw new Error(`Graph token error: ${data.error_description ?? JSON.stringify(data)}`)
-  }
-  return data.access_token
+    tls: { ciphers: 'SSLv3' },
+  })
 }
 
 async function sendViaGraph(
@@ -55,31 +36,14 @@ async function sendViaGraph(
   htmlBody: string,
 ): Promise<void> {
   const sender = process.env.MAIL_SENDER!
-  const token = await getGraphToken()
-
-  const res = await fetch(`${GRAPH}/me/sendMail`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      message: {
-        subject,
-        body: { contentType: 'HTML', content: htmlBody },
-        toRecipients: [{ emailAddress: { address: toEmail, name: toName } }],
-        from: { emailAddress: { address: sender, name: 'SANPC DMS' } },
-      },
-      saveToSentItems: false,
-    }),
+  const transport = createTransport()
+  await transport.sendMail({
+    from: `"SANPC DMS" <${sender}>`,
+    to: `"${toName}" <${toEmail}>`,
+    subject,
+    html: htmlBody,
   })
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new Error(`Graph sendMail failed (${res.status}): ${text}`)
-  }
-
-  console.log(`[email] sent via Graph API from ${sender} to ${toEmail}`)
+  console.log(`[email] sent via SMTP from ${sender} to ${toEmail}`)
 }
 
 /* ── HTML helpers ────────────────────────────────────────────────────────── */
@@ -396,6 +360,47 @@ export async function sendDocControllerNotification(props: {
   </div>
 </body></html>`
   await sendViaGraph(props.toEmail, props.toName, subjectMap[props.stage], html)
+}
+
+/* ── Review deadline expired — notify DC and originator ─────────────────── */
+
+export async function sendDeadlineExpiredEmail(props: {
+  toEmail: string
+  toName: string
+  documentTitle: string
+  documentUrl: string
+  isDC: boolean
+}): Promise<void> {
+  if (!isEmailConfigured()) {
+    console.log(`[email] not configured — would send deadline-expired notice to ${props.toEmail}`)
+    return
+  }
+  const message = props.isDC
+    ? 'The 21-day review window has closed. The document has been returned to Changes Requested — please coordinate with the Originator to update and resubmit.'
+    : 'The 21-day review window for this document has closed. The document has been returned to you for updates. Please revise and resubmit when ready.'
+  const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:0;">
+  <div style="max-width:600px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;
+    box-shadow:0 2px 8px rgba(0,0,0,.08);">
+    <div style="background:#1C3557;padding:28px 32px;">
+      <div style="font-size:22px;font-weight:800;color:#fff;">SANPC DMS</div>
+      <div style="font-size:11px;font-weight:600;letter-spacing:.18em;color:#F5A623;margin-top:2px;">POWERING YOUR TOMORROW</div>
+    </div>
+    <div style="padding:32px;">
+      <div style="background:#FEF3C7;border-left:4px solid #D97706;border-radius:6px;padding:14px 18px;margin-bottom:24px;">
+        <div style="font-size:15px;font-weight:700;color:#92400E;">⏰ Review Deadline Expired</div>
+        <div style="font-size:13px;color:#78350F;margin-top:4px;">${message}</div>
+      </div>
+      <p style="margin:0 0 8px;font-size:15px;color:#374151;">Dear <strong>${props.toName}</strong>,</p>
+      <p style="margin:0 0 16px;font-size:14px;color:#374151;">
+        Document: <strong>${props.documentTitle}</strong>
+      </p>
+      ${btn(props.documentUrl, 'View Document in SANPC DMS', '#1C3557', '#fff')}
+      <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0 16px;" />
+      <p style="margin:0;font-size:12px;color:#9ca3af;">Automated notification from SANPC DMS.</p>
+    </div>
+  </div>
+</body></html>`
+  await sendViaGraph(props.toEmail, props.toName, `[SANPC DMS] Review Deadline Expired: ${props.documentTitle}`, html)
 }
 
 /* ── Document file replaced — notify active reviewers/approvers ─────────── */

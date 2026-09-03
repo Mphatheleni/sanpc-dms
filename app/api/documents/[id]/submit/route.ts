@@ -18,6 +18,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       fileUrl: true, fileName: true, fileType: true, fileSize: true,
       uploadedById: true, sharePointUrl: true, reviewDeadlineDays: true,
       uploadedBy: { select: { id: true, name: true, email: true } },
+      originatorUser: { select: { id: true, name: true, email: true } },
       reviews: {
         include: { reviewer: { select: { id: true, name: true, email: true } } },
         orderBy: { order: 'asc' },
@@ -41,8 +42,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: 'No reviewers or approvers assigned' }, { status: 400 })
   }
 
-  const reviewerReviews = document.reviews.filter((r) => !r.isApprover)
-  const approverReviews = document.reviews.filter((r) => r.isApprover)
+  const reviewerReviews = document.reviews.filter((r) => !r.isApprover && r.status !== 'REMOVED')
+  const approverReviews = document.reviews.filter((r) => r.isApprover && r.status !== 'REMOVED')
 
   const now = new Date()
   let newVersion = document.version
@@ -67,9 +68,9 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   const deadlineDays = document.reviewDeadlineDays
   const deadline = deadlineDays ? calcDeadline(now, deadlineDays) : null
 
-  // Reset all reviews to PENDING
+  // Reset all non-REMOVED reviews to PENDING (keep REMOVED records as-is for audit trail)
   await prisma.documentReview.updateMany({
-    where: { documentId: id },
+    where: { documentId: id, status: { not: 'REMOVED' } },
     data: { status: 'PENDING', startedAt: null, reviewedAt: null, comments: null, deadline: null },
   })
 
@@ -159,6 +160,18 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       stage: 'SUBMITTED',
     })
   )
+  // Mirror to originator if set and different from uploader
+  if (document.originatorUser && document.originatorUser.id !== document.uploadedBy.id) {
+    secondaryEmails.push(
+      sendDocControllerNotification({
+        toEmail: document.originatorUser.email,
+        toName: document.originatorUser.name,
+        documentTitle: document.title,
+        documentUrl: `${appUrl}/documents/${id}`,
+        stage: 'SUBMITTED',
+      })
+    )
+  }
 
   await Promise.all(secondaryEmails.map((p) => p.catch((e) => console.error('[submit] secondary email error:', e))))
 

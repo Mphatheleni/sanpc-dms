@@ -1,4 +1,4 @@
-export type Role = 'ADMIN' | 'DOCUMENT_MANAGER' | 'REVIEWER' | 'APPROVER'
+export type Role = 'ADMIN' | 'DOCUMENT_MANAGER' | 'REVIEWER' | 'APPROVER' | 'ORIGINATOR'
 
 export type DocumentStatus =
   | 'REGISTERED'
@@ -23,6 +23,7 @@ export type ReviewStatus =
   | 'APPROVED'
   | 'REJECTED'
   | 'CHANGES_REQUESTED'
+  | 'REMOVED'
 
 export type ActivityAction =
   | 'CREATED'
@@ -41,6 +42,9 @@ export type ActivityAction =
   | 'EXCO_SUBMITTED'
   | 'SIGNED_PAGE_UPLOADED'
   | 'AMENDED'
+  | 'ATTACHMENT_ADDED'
+  | 'ATTACHMENT_REMOVED'
+  | 'STATUS_CHANGED'
 
 export interface User {
   id: string
@@ -54,19 +58,6 @@ export interface DocumentMetadata {
   id: string
   key: string
   value: string
-}
-
-export interface DocumentReview {
-  id: string
-  reviewerId: string
-  reviewer: User
-  order: number
-  isApprover: boolean
-  status: ReviewStatus
-  comments: string | null
-  reviewedAt: string | null
-  startedAt: string | null
-  deadline: string | null
 }
 
 export interface DocumentComment {
@@ -86,6 +77,19 @@ export interface DocumentVersion {
   fileSize: number
   uploadedById: string
   uploadedBy: User
+  createdAt: string
+}
+
+export interface DocumentAttachment {
+  id: string
+  documentId: string
+  fileName: string
+  fileUrl: string
+  fileType: string
+  fileSize: number
+  label: string | null
+  uploadedById: string
+  uploadedBy: { id: string; name: string; email: string }
   createdAt: string
 }
 
@@ -141,6 +145,7 @@ export interface Document {
   comments: DocumentComment[]
   versions: DocumentVersion[]
   activities: DocumentActivity[]
+  attachments?: DocumentAttachment[]
 }
 
 export interface DocumentReview {

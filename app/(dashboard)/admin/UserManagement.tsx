@@ -27,6 +27,7 @@ const roleVariants: Record<string, 'default' | 'success' | 'warning' | 'danger' 
   DOCUMENT_MANAGER: 'info',
   REVIEWER:         'secondary',
   APPROVER:         'success',
+  ORIGINATOR:       'warning',
 }
 
 const roleLabels: Record<string, string> = {
@@ -34,6 +35,7 @@ const roleLabels: Record<string, string> = {
   DOCUMENT_MANAGER: 'Document Controller',
   REVIEWER:         'Reviewer',
   APPROVER:         'Approver',
+  ORIGINATOR:       'Originator',
 }
 
 const roleColors: Record<string, string> = {
@@ -41,13 +43,14 @@ const roleColors: Record<string, string> = {
   DOCUMENT_MANAGER: '#1C3557',
   REVIEWER:         '#7C3AED',
   APPROVER:         '#16A34A',
+  ORIGINATOR:       '#D97706',
 }
 
 function formatDate(date: Date) {
   return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-const ROLES = ['ADMIN', 'DOCUMENT_MANAGER', 'REVIEWER', 'APPROVER'] as const
+const ROLES = ['ADMIN', 'DOCUMENT_MANAGER', 'REVIEWER', 'APPROVER', 'ORIGINATOR'] as const
 
 export default function UserManagement({ initialUsers, currentUserId }: { initialUsers: User[]; currentUserId: string }) {
   const [users, setUsers] = useState(initialUsers)

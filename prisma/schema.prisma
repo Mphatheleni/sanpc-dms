@@ -6,11 +6,179 @@ datasource db {
   provider = "postgresql"
 }
 
+model User {
+  id                       String                    @id @default(cuid())
+  name                     String
+  email                    String                    @unique
+  password                 String
+  role                     Role
+  departmentRole           String?
+  createdAt                DateTime                  @default(now())
+  authorizedDocuments      Document[]                @relation("AuthorizerOf")
+  originatedDocuments      Document[]                @relation("OriginatorOf")
+  uploadedDocuments        Document[]                @relation("UploadedBy")
+  activities               DocumentActivity[]        @relation("ActivityUser")
+  comments                 DocumentComment[]
+  reviews                  DocumentReview[]
+  versionUploads           DocumentVersion[]         @relation("VersionUploadedBy")
+  attachmentUploads        DocumentAttachment[]      @relation("AttachmentUploadedBy")
+  mandatoryReviewerConfigs MandatoryReviewerConfig[]
+  notifications            Notification[]
+}
+
+/// Maps a document type to specific mandatory reviewers (person-based).
+/// When uploading a document of this type, these people are pre-selected as reviewers.
+model MandatoryReviewerConfig {
+  id           String   @id @default(cuid())
+  documentType String
+  userId       String
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([documentType, userId])
+}
+
+model Notification {
+  id         String   @id @default(cuid())
+  userId     String
+  type       String
+  title      String
+  message    String
+  documentId String?
+  read       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Document {
+  id                 String             @id @default(cuid())
+  title              String
+  description        String?
+  category           String?
+  tags               String?
+  fileUrl            String
+  fileName           String
+  fileType           String
+  fileSize           Int
+  status             DocumentStatus     @default(DRAFT)
+  version            Int                @default(1)
+  sharePointUrl      String?
+  sharePointItemId   String?
+  reviewDeadlineDays Int?
+  documentNumber     String?
+  revision           String?            @default("00")
+  originalDate       String?
+  authorisedBy       String?
+  originator         String?
+  purpose            String?
+  documentTypeCode   String?
+  nextReviewDate     String?
+  retentionDate      String?
+  signedPageUrl      String?
+  signedPageName     String?
+  excoResolutionUrl  String?
+  excoResolutionName String?
+  isExcoRequired     Boolean            @default(false)
+  controlledAt       String?
+  amendmentCount     Int                @default(0)
+  originatorId       String?
+  authorizerId       String?
+  uploadedById       String
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  authorizerUser     User?              @relation("AuthorizerOf", fields: [authorizerId], references: [id])
+  originatorUser     User?              @relation("OriginatorOf", fields: [originatorId], references: [id])
+  uploadedBy         User               @relation("UploadedBy", fields: [uploadedById], references: [id])
+  activities         DocumentActivity[]
+  attachments        DocumentAttachment[]
+  comments           DocumentComment[]
+  metadata           DocumentMetadata[]
+  reviews            DocumentReview[]
+  versions           DocumentVersion[]
+}
+
+model DocumentMetadata {
+  id         String   @id @default(cuid())
+  documentId String
+  key        String
+  value      String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+}
+
+model DocumentReview {
+  id             String       @id @default(cuid())
+  documentId     String
+  reviewerId     String
+  order          Int
+  isApprover     Boolean      @default(false)
+  isMandatory    Boolean      @default(false)
+  mandatoryRole  String?
+  status         ReviewStatus @default(PENDING)
+  comments       String?
+  reviewedAt     DateTime?
+  startedAt      DateTime?
+  deadline       DateTime?
+  reminderSentAt DateTime?
+  document       Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  reviewer       User         @relation(fields: [reviewerId], references: [id])
+}
+
+model DocumentComment {
+  id         String   @id @default(cuid())
+  documentId String
+  authorId   String
+  content    String
+  createdAt  DateTime @default(now())
+  author     User     @relation(fields: [authorId], references: [id])
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+}
+
+model DocumentVersion {
+  id            String   @id @default(cuid())
+  documentId    String
+  versionNumber Int
+  fileUrl       String
+  fileName      String
+  fileType      String
+  fileSize      Int
+  uploadedById  String
+  createdAt     DateTime @default(now())
+  document      Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  uploadedBy    User     @relation("VersionUploadedBy", fields: [uploadedById], references: [id])
+}
+
+/// DLT-09: Attachments unlocked after Approved status (signed PDF, board resolution, Word master, etc.)
+model DocumentAttachment {
+  id           String   @id @default(cuid())
+  documentId   String
+  fileName     String
+  fileUrl      String
+  fileType     String
+  fileSize     Int
+  label        String?
+  uploadedById String
+  createdAt    DateTime @default(now())
+  document     Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  uploadedBy   User     @relation("AttachmentUploadedBy", fields: [uploadedById], references: [id])
+}
+
+model DocumentActivity {
+  id         String         @id @default(cuid())
+  documentId String
+  userId     String
+  action     ActivityAction
+  details    String?
+  createdAt  DateTime       @default(now())
+  document   Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user       User           @relation("ActivityUser", fields: [userId], references: [id])
+}
+
 enum Role {
   ADMIN
   DOCUMENT_MANAGER
   REVIEWER
   APPROVER
+  ORIGINATOR
 }
 
 enum DocumentStatus {
@@ -37,6 +205,7 @@ enum ReviewStatus {
   APPROVED
   REJECTED
   CHANGES_REQUESTED
+  REMOVED
 }
 
 enum ActivityAction {
@@ -56,163 +225,7 @@ enum ActivityAction {
   EXCO_SUBMITTED
   SIGNED_PAGE_UPLOADED
   AMENDED
-}
-
-model User {
-  id             String   @id @default(cuid())
-  name           String
-  email          String   @unique
-  password       String
-  role           Role
-  departmentRole String?  // LEGAL | INTERNAL_AUDIT | QUALITY | PROCEDURES
-  createdAt      DateTime @default(now())
-
-  uploadedDocuments        Document[]                @relation("UploadedBy")
-  originatedDocuments      Document[]                @relation("OriginatorOf")
-  authorizedDocuments      Document[]                @relation("AuthorizerOf")
-  reviews                  DocumentReview[]
-  comments                 DocumentComment[]
-  versionUploads           DocumentVersion[]         @relation("VersionUploadedBy")
-  activities               DocumentActivity[]        @relation("ActivityUser")
-  notifications            Notification[]
-  mandatoryReviewerConfigs MandatoryReviewerConfig[]
-}
-
-/// Maps a document type to specific mandatory reviewers (person-based).
-/// When uploading a document of this type, these people are pre-selected as reviewers.
-model MandatoryReviewerConfig {
-  id           String   @id @default(cuid())
-  documentType String   // e.g. "Policy", "Procedure"
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt    DateTime @default(now())
-
-  @@unique([documentType, userId])
-}
-
-model Notification {
-  id         String   @id @default(cuid())
-  userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type       String
-  title      String
-  message    String
-  documentId String?
-  read       Boolean  @default(false)
-  createdAt  DateTime @default(now())
-}
-
-model Document {
-  id               String         @id @default(cuid())
-  title            String
-  description      String?
-  category         String?
-  tags             String?
-  fileUrl          String
-  fileName         String
-  fileType         String
-  fileSize         Int
-  status           DocumentStatus @default(DRAFT)
-  version          Int            @default(1)
-  sharePointUrl    String?
-  sharePointItemId String?
-  reviewDeadlineDays Int?
-
-  // SANPC document control fields
-  documentNumber    String?
-  revision          String?  @default("00")
-  originalDate      String?
-  authorisedBy      String?
-  originator        String?
-  purpose           String?
-  documentTypeCode  String?
-  nextReviewDate    String?
-
-  // Lifecycle fields
-  retentionDate     String?   // 40 years from controlled date
-  signedPageUrl     String?   // uploaded signed authorisation page
-  signedPageName    String?
-  excoResolutionUrl  String?   // Board resolution for Policy docs
-  excoResolutionName String?
-  isExcoRequired    Boolean   @default(false)
-  controlledAt      String?   // date first marked CONTROLLED
-  amendmentCount    Int       @default(0)
-
-  originatorId  String?
-  originatorUser User?  @relation("OriginatorOf", fields: [originatorId], references: [id], onDelete: SetNull)
-  authorizerId  String?
-  authorizerUser User?  @relation("AuthorizerOf", fields: [authorizerId], references: [id], onDelete: SetNull)
-
-  uploadedById String
-  uploadedBy   User   @relation("UploadedBy", fields: [uploadedById], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  metadata   DocumentMetadata[]
-  reviews    DocumentReview[]
-  comments   DocumentComment[]
-  versions   DocumentVersion[]
-  activities DocumentActivity[]
-}
-
-model DocumentMetadata {
-  id         String   @id @default(cuid())
-  documentId String
-  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  key        String
-  value      String
-}
-
-model DocumentReview {
-  id         String       @id @default(cuid())
-  documentId String
-  document   Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  reviewerId String
-  reviewer   User         @relation(fields: [reviewerId], references: [id])
-  order      Int
-  isApprover Boolean      @default(false)
-  isMandatory Boolean     @default(false)  // Legal, Internal Audit, Quality, Procedures
-  mandatoryRole String?                    // e.g. "LEGAL"
-  status     ReviewStatus @default(PENDING)
-  comments   String?
-  reviewedAt DateTime?
-  startedAt  DateTime?
-  deadline   DateTime?
-  reminderSentAt DateTime?                 // day-18 reminder tracking
-}
-
-model DocumentComment {
-  id         String   @id @default(cuid())
-  documentId String
-  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  authorId   String
-  author     User     @relation(fields: [authorId], references: [id])
-  content    String
-  createdAt  DateTime @default(now())
-}
-
-model DocumentVersion {
-  id            String   @id @default(cuid())
-  documentId    String
-  document      Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  versionNumber Int
-  fileUrl       String
-  fileName      String
-  fileType      String
-  fileSize      Int
-  uploadedById  String
-  uploadedBy    User     @relation("VersionUploadedBy", fields: [uploadedById], references: [id])
-  createdAt     DateTime @default(now())
-}
-
-model DocumentActivity {
-  id         String         @id @default(cuid())
-  documentId String
-  document   Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  userId     String
-  user       User           @relation("ActivityUser", fields: [userId], references: [id])
-  action     ActivityAction
-  details    String?
-  createdAt  DateTime       @default(now())
+  ATTACHMENT_ADDED
+  ATTACHMENT_REMOVED
+  STATUS_CHANGED
 }

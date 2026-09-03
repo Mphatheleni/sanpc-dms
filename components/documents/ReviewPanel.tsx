@@ -4,11 +4,12 @@ import { useState, useRef } from 'react'
 import {
   CheckCircle, XCircle,
   FileEdit, ClipboardCheck, AlertTriangle, Clock, Send, ShieldCheck, Archive, Ban,
-  Upload, Landmark, FileSignature,
+  Upload, Landmark, FileSignature, Eye, EyeOff,
 } from 'lucide-react'
 import Button from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Input'
 import { getDeadlineLabel, isReviewOverdue } from '@/lib/sla'
+import DocumentViewer from '@/components/documents/DocumentViewer'
 import type { Document, SessionUser } from '@/types'
 
 interface ReviewPanelProps {
@@ -19,17 +20,20 @@ interface ReviewPanelProps {
 
 export default function ReviewPanel({ document, session, onUpdate }: ReviewPanelProps) {
   const [comments, setComments] = useState('')
-  const [reviewDecision, setReviewDecision] = useState('')
   const [loading, setLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [signFile, setSignFile] = useState<File | null>(null)
   const [excoFile, setExcoFile] = useState<File | null>(null)
   const [amendFile, setAmendFile] = useState<File | null>(null)
+  const [uploadedAmendName, setUploadedAmendName] = useState<string | null>(null)
+  const [showDocViewer, setShowDocViewer] = useState(false)
   const signRef = useRef<HTMLInputElement>(null)
   const excoRef = useRef<HTMLInputElement>(null)
   const amendRef = useRef<HTMLInputElement>(null)
 
-  const isUploader    = document.uploadedById === session.userId || session.role === 'ADMIN'
+  // ORIGINATOR is read-only — cannot submit, advance, or take any workflow action
+  const isUploader    = session.role !== 'ORIGINATOR' &&
+    (document.uploadedById === session.userId || session.role === 'ADMIN' || session.role === 'DOCUMENT_MANAGER')
 
   const myActiveReview = document.reviews.find(
     (r) => !r.isApprover && r.reviewerId === session.userId && r.status === 'IN_PROGRESS'
@@ -47,7 +51,8 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
     document.reviews.length > 0
   const canResubmitForApproval = isUploader && document.status === 'REJECTED' && document.reviews.some((r) => r.isApprover)
   const canAdvance      = isUploader && (document.status === 'REVIEW_COMPLETE' || document.status === 'UPDATING')
-  const canReplaceFile  = isUploader && ['IN_REVIEW', 'FINAL_DRAFT', 'PENDING_APPROVAL', 'REJECTED', 'CHANGES_REQUESTED'].includes(document.status)
+  // W-5.5: document is locked while review is running — only replaceable at Request Update / post-rejection stages
+  const canReplaceFile  = isUploader && ['FINAL_DRAFT', 'PENDING_APPROVAL', 'REJECTED', 'CHANGES_REQUESTED'].includes(document.status)
   const canControl   = (session.role === 'ADMIN' || isUploader) && document.status === 'APPROVED' && document.documentTypeCode !== 'PO' && !document.isExcoRequired
   const canExco      = (session.role === 'ADMIN' || isUploader) && document.status === 'APPROVED' && (document.documentTypeCode === 'PO' || document.isExcoRequired)
   const canExcoCtrl  = (session.role === 'ADMIN' || isUploader) && document.status === 'EXCO_PENDING'
@@ -70,7 +75,7 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ decision, comments: body }),
       })
-      if (res.ok) { onUpdate(await res.json()); setComments(''); setReviewDecision('') }
+      if (res.ok) { onUpdate(await res.json()); setComments('') }
       else { const d = await res.json().catch(() => ({})); setError(d.error || `Error ${res.status}`) }
     } finally { setLoading(null) }
   }
@@ -113,8 +118,11 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
       const fd = new FormData()
       fd.append('file', amendFile)
       const res = await fetch(`/api/documents/${document.id}/amend-file`, { method: 'POST', body: fd })
-      if (res.ok) { onUpdate(await res.json()); setAmendFile(null) }
-      else { const d = await res.json().catch(() => ({})); setError(d.error || `Error ${res.status}`) }
+      if (res.ok) {
+        setUploadedAmendName(amendFile.name)
+        onUpdate(await res.json())
+        setAmendFile(null)
+      } else { const d = await res.json().catch(() => ({})); setError(d.error || `Error ${res.status}`) }
     } finally { setLoading(null) }
   }
 
@@ -183,7 +191,7 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
       <div className="rounded-xl border-2 overflow-hidden" style={{ borderColor: '#1C3557' }}>
         <div className="px-5 py-3 flex items-center gap-2" style={{ backgroundColor: '#1C3557' }}>
           <ClipboardCheck className="h-5 w-5 text-white" />
-          <span className="font-bold text-white text-sm">All Reviews Complete — Action Required</span>
+          <span className="font-bold text-white text-sm">Request Update — Action Required</span>
         </div>
         <div className="p-5 bg-white space-y-4">
           <p className="text-sm text-gray-600">
@@ -216,14 +224,35 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
                 Upload New Version
               </Button>
             )}
+            {uploadedAmendName && !amendFile && (
+              <div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-700">
+                <CheckCircle className="h-4 w-4 flex-shrink-0" />
+                Uploaded: <strong>{uploadedAmendName}</strong>
+              </div>
+            )}
           </div>
 
-          <div className="border-t pt-4">
-            <p className="text-sm font-medium text-gray-700 mb-3">When the final version is ready, send for approval:</p>
-            <Button onClick={advanceToApproval} loading={loading === 'advance'}>
-              <Send className="h-4 w-4" />
-              Send Final Draft for Approval
-            </Button>
+          <div className="border-t pt-4 space-y-3">
+            <p className="text-sm font-medium text-gray-700">When the final version is ready, send for approval:</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setShowDocViewer((v) => !v)}
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 bg-white hover:bg-gray-50 transition-colors"
+              >
+                {showDocViewer ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {showDocViewer ? 'Hide Document' : 'View Document'}
+              </button>
+              <Button onClick={advanceToApproval} loading={loading === 'advance'}>
+                <Send className="h-4 w-4" />
+                Send Final Draft for Approval
+              </Button>
+            </div>
+            {showDocViewer && (
+              <div className="mt-2">
+                <DocumentViewer documentId={document.id} fileName={document.fileName} fileType={document.fileType} />
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -243,18 +272,33 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
             This document was rejected. Obtain the revised version from the Originator, upload it below,
             then send it directly for re-approval. <strong>It will not go back through the review stage.</strong>
           </p>
+
+          {/* Mandatory upload notice */}
+          {!uploadedAmendName && (
+            <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+              <AlertTriangle className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-red-700 font-medium">
+                You must upload a revised document before you can resubmit for approval.
+              </p>
+            </div>
+          )}
+
           {error && <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{error}</div>}
 
-          {/* Replace file (optional — originator may have updated directly in SharePoint) */}
-          <div className="rounded-lg border border-gray-200 p-4 space-y-3">
-            <p className="text-sm font-medium text-gray-700">Upload Revised Document (from Originator)</p>
+          {/* Mandatory: upload revised document */}
+          <div className="rounded-lg border border-red-200 bg-red-50/30 p-4 space-y-3">
+            <p className="text-sm font-semibold text-gray-700">
+              Upload Revised Document <span className="text-red-500">*</span>
+            </p>
             <div
-              className="flex items-center gap-3 rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 px-4 py-3 cursor-pointer hover:border-red-400 transition-colors"
-              onClick={() => amendRef.current?.click()}
+              className={`flex items-center gap-3 rounded-lg border-2 border-dashed px-4 py-3 cursor-pointer transition-colors ${
+                uploadedAmendName ? 'border-green-400 bg-green-50' : 'border-red-300 bg-white hover:border-red-500'
+              }`}
+              onClick={() => !uploadedAmendName && amendRef.current?.click()}
             >
-              <Upload className="h-4 w-4 text-gray-400 flex-shrink-0" />
+              <Upload className={`h-4 w-4 flex-shrink-0 ${uploadedAmendName ? 'text-green-500' : 'text-red-400'}`} />
               <span className="text-sm text-gray-500">
-                {amendFile ? amendFile.name : 'Click to select revised document (optional)'}
+                {amendFile ? amendFile.name : 'Click to select revised document'}
               </span>
             </div>
             <input
@@ -269,14 +313,44 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
                 Upload Revised Document
               </Button>
             )}
+            {uploadedAmendName && !amendFile && (
+              <div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-700">
+                <CheckCircle className="h-4 w-4 flex-shrink-0" />
+                Uploaded: <strong>{uploadedAmendName}</strong>
+              </div>
+            )}
           </div>
 
-          <div className="border-t pt-4">
-            <p className="text-sm font-medium text-gray-700 mb-3">When ready, send back to approvers:</p>
-            <Button onClick={resubmitForApproval} loading={loading === 'resubmit'}>
-              <Send className="h-4 w-4" />
-              Send for Re-Approval
-            </Button>
+          <div className="border-t pt-4 space-y-3">
+            <p className="text-sm font-medium text-gray-700">When ready, send back to approvers:</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setShowDocViewer((v) => !v)}
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 bg-white hover:bg-gray-50 transition-colors"
+              >
+                {showDocViewer ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {showDocViewer ? 'Hide Document' : 'View Document'}
+              </button>
+              <button
+                onClick={resubmitForApproval}
+                disabled={!uploadedAmendName || !!loading}
+                title={!uploadedAmendName ? 'Upload a revised document first' : undefined}
+                className={`inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-bold text-white transition-all ${
+                  uploadedAmendName && !loading
+                    ? 'bg-red-600 hover:bg-red-700'
+                    : 'bg-gray-300 cursor-not-allowed'
+                }`}
+              >
+                <Send className="h-4 w-4" />
+                {loading === 'resubmit' ? 'Submitting…' : 'Send for Re-Approval'}
+              </button>
+            </div>
+            {showDocViewer && (
+              <div className="mt-2">
+                <DocumentViewer documentId={document.id} fileName={document.fileName} fileType={document.fileType} />
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -558,7 +632,7 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
     )
   }
 
-  // ── Reviewer / Approver: two-step action panel ────────────────────────────
+  // ── Reviewer / Approver action panel ─────────────────────────────────────
   return (
     <div className="rounded-xl border-2 overflow-hidden" style={{ borderColor: '#1C3557' }}>
       {/* Header */}
@@ -579,118 +653,52 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
         )}
       </div>
 
-      <div className="p-5 space-y-5 bg-white">
-        {/* Decision form */}
-        <div className="rounded-lg border border-gray-200 p-4 space-y-4">
-          <div className="flex items-start gap-3">
-            <div
-              className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-white text-xs font-bold"
-              style={{ backgroundColor: '#1C3557' }}
+      <div className="p-5 space-y-4 bg-white">
+        {error && <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{error}</div>}
+
+        {canApprove && (
+          <Textarea
+            label="Decision comments (optional)"
+            value={comments}
+            onChange={(e) => setComments(e.target.value)}
+            rows={3}
+            placeholder="Add approval notes or reason for rejection…"
+          />
+        )}
+
+        {canReview && (
+          <button
+            onClick={() => submitReview('APPROVED')}
+            disabled={!!loading}
+            className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-bold text-white transition-all disabled:opacity-60 hover:opacity-90"
+            style={{ backgroundColor: '#1C3557' }}
+          >
+            <CheckCircle className="h-4 w-4" />
+            {loading === 'APPROVED' ? 'Submitting…' : 'Mark Review as Complete'}
+          </button>
+        )}
+
+        {canApprove && (
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => submitApproval('APPROVED')}
+              disabled={!!loading}
+              className="inline-flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-bold text-white transition-all disabled:opacity-60 hover:opacity-90"
+              style={{ backgroundColor: '#16A34A' }}
             >
-              1
-            </div>
-            <div>
-              <p className="font-semibold text-gray-800 text-sm">Submit your formal decision</p>
-              <p className="text-xs text-gray-500 mt-0.5">
-                {isApproverAction
-                  ? 'Your decision is final. Approve to publish this document, or reject to return it.'
-                  : 'After reviewing, record your decision below. A comment is required.'}
-              </p>
-            </div>
+              <CheckCircle className="h-4 w-4" />
+              {loading === 'APPROVED' ? 'Approving…' : 'Final Approve'}
+            </button>
+            <button
+              onClick={() => submitApproval('REJECTED')}
+              disabled={!!loading}
+              className="inline-flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-bold text-white transition-all disabled:opacity-60 bg-red-600 hover:bg-red-700"
+            >
+              <XCircle className="h-4 w-4" />
+              {loading === 'REJECTED' ? 'Rejecting…' : 'Reject'}
+            </button>
           </div>
-
-          {error && <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{error}</div>}
-
-          {/* S7: Reviewer gets structured dropdown; approvers keep free-text */}
-          {canReview && !isApproverAction ? (
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">Reviewer comments (required)</label>
-                <select
-                  value={reviewDecision}
-                  onChange={(e) => setReviewDecision(e.target.value)}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sanpc-navy focus:outline-none focus:ring-1 focus:ring-sanpc-navy"
-                >
-                  <option value="">— Select a decision —</option>
-                  <option value="No comment — document reviewed as submitted">No comment — document reviewed as submitted</option>
-                  <option value="Reviewed and accepted with minor corrections">Reviewed and accepted with minor corrections</option>
-                  <option value="Changes required — see annotations in document">Changes required — see annotations in document</option>
-                  <option value="Significant revision required — see notes below">Significant revision required — see notes below</option>
-                  <option value="Other — specify below">Other — specify below</option>
-                </select>
-              </div>
-              {['Changes required — see annotations in document', 'Significant revision required — see notes below', 'Other — specify below'].includes(reviewDecision) && (
-                <Textarea
-                  label="Additional notes"
-                  value={comments}
-                  onChange={(e) => setComments(e.target.value)}
-                  rows={3}
-                  placeholder="Provide further detail…"
-                />
-              )}
-            </div>
-          ) : (
-            <Textarea
-              label="Decision comments (optional)"
-              value={comments}
-              onChange={(e) => setComments(e.target.value)}
-              rows={3}
-              placeholder="Add approval notes or reason for rejection…"
-            />
-          )}
-
-          <div>
-            {canReview && (
-              <div className="space-y-3">
-                <button
-                  onClick={() => {
-                    if (!reviewDecision) { setError('Please select a decision before marking complete.'); return }
-                    setError(null)
-                    const combined = reviewDecision + (comments.trim() ? ': ' + comments.trim() : '')
-                    submitReview('APPROVED', combined)
-                  }}
-                  disabled={!!loading}
-                  className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-bold text-white transition-all disabled:opacity-60 hover:opacity-90"
-                  style={{ backgroundColor: '#1C3557' }}
-                >
-                  <CheckCircle className="h-4 w-4" />
-                  {loading === 'APPROVED' ? 'Submitting…' : 'Mark as Complete'}
-                </button>
-                <p className="text-[11px] text-gray-400">
-                  Review the document above, select your decision, then mark your review as complete.
-                </p>
-              </div>
-            )}
-
-            {canApprove && (
-              <div className="space-y-3">
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() => submitApproval('APPROVED')}
-                    disabled={!!loading}
-                    className="inline-flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-bold text-white transition-all disabled:opacity-60 hover:opacity-90"
-                    style={{ backgroundColor: '#16A34A' }}
-                  >
-                    <CheckCircle className="h-4 w-4" />
-                    {loading === 'APPROVED' ? 'Approving…' : 'Final Approve'}
-                  </button>
-                  <button
-                    onClick={() => submitApproval('REJECTED')}
-                    disabled={!!loading}
-                    className="inline-flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-bold text-white transition-all disabled:opacity-60 bg-red-600 hover:bg-red-700"
-                  >
-                    <XCircle className="h-4 w-4" />
-                    {loading === 'REJECTED' ? 'Rejecting…' : 'Reject'}
-                  </button>
-                </div>
-                <p className="text-[11px] text-gray-400">
-                  <strong>Final Approve</strong> — marks document as officially approved &nbsp;·&nbsp;
-                  <strong>Reject</strong> — returns document to manager
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
+        )}
       </div>
     </div>
   )

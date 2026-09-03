@@ -1,7 +1,7 @@
 import {
   Eye, Upload, CheckCircle, XCircle, RefreshCw,
   MessageSquare, FilePlus, Download, ThumbsUp, ThumbsDown, ShieldCheck, Archive, Ban,
-  Landmark, FileSignature, PenLine,
+  Landmark, FileSignature, PenLine, Paperclip, ArrowRightLeft,
 } from 'lucide-react'
 import type { ActivityAction } from '@/types'
 
@@ -30,6 +30,9 @@ const actionConfig: Partial<Record<ActivityAction, { label: string; icon: React.
   EXCO_SUBMITTED:            { label: 'Submitted for EXCO',       icon: Landmark,       color: 'text-purple-600 bg-purple-50' },
   SIGNED_PAGE_UPLOADED:      { label: 'Uploaded signed page',     icon: FileSignature,  color: 'text-green-600 bg-green-50' },
   AMENDED:                   { label: 'Document amended',         icon: PenLine,        color: 'text-blue-600 bg-blue-50' },
+  ATTACHMENT_ADDED:          { label: 'Attachment uploaded',      icon: Paperclip,      color: 'text-teal-600 bg-teal-50' },
+  ATTACHMENT_REMOVED:        { label: 'Attachment removed',       icon: Paperclip,      color: 'text-gray-500 bg-gray-100' },
+  STATUS_CHANGED:            { label: 'Status changed manually',  icon: ArrowRightLeft, color: 'text-orange-600 bg-orange-50' },
 }
 
 function timeAgo(date: string): string {

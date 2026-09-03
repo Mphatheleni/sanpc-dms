@@ -47,8 +47,10 @@ export async function POST(
   const activeStatuses = isApprover ? ['PENDING_APPROVAL', 'FINAL_DRAFT'] : ['IN_REVIEW']
   const isActiveAdd = activeStatuses.includes(document.status)
 
-  // Prevent duplicates
-  const alreadyAssigned = document.reviews.some((r) => r.reviewerId === newReviewerId)
+  // Prevent duplicates — REMOVED records don't count, so removed people can be re-added
+  const alreadyAssigned = document.reviews.some(
+    (r) => r.reviewerId === newReviewerId && r.status !== 'REMOVED'
+  )
   if (alreadyAssigned) {
     return NextResponse.json({ error: 'This person is already in the review workflow' }, { status: 400 })
   }

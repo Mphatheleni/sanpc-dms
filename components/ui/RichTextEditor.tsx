@@ -43,11 +43,21 @@ export default function RichTextEditor({
   const expandedRef = useRef<HTMLDivElement>(null)
   const isFocused = useRef(false)
 
-  // Sync external value → compact editor when not focused
+  // Initialize compact editor HTML on mount only (avoids React overwriting innerHTML mid-type)
   useEffect(() => {
-    if (compactRef.current && !isFocused.current) {
-      if (compactRef.current.innerHTML !== value) {
-        compactRef.current.innerHTML = value
+    if (compactRef.current) {
+      compactRef.current.innerHTML = value || ''
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Sync external value → compact editor only when not focused (e.g. parent clears the field)
+  // Use document.activeElement (synchronous DOM check) instead of an isFocused ref to avoid
+  // race conditions in React 18 concurrent mode that caused cursor-jump / reverse-typing bugs.
+  useEffect(() => {
+    if (compactRef.current && document.activeElement !== compactRef.current) {
+      if (compactRef.current.innerHTML !== (value || '')) {
+        compactRef.current.innerHTML = value || ''
       }
     }
   }, [value])
@@ -125,7 +135,6 @@ export default function RichTextEditor({
           onBlur={() => { isFocused.current = false }}
           className="px-3 py-2.5 text-sm text-gray-900 outline-none [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 leading-relaxed"
           style={{ minHeight, maxHeight: '8rem', overflowY: 'auto' }}
-          dangerouslySetInnerHTML={{ __html: value || '' }}
         />
         <button
           type="button"

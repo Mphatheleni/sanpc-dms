@@ -55,9 +55,13 @@ export async function POST(
     return NextResponse.json({ error: 'Cannot replace a reviewer who has already completed their review' }, { status: 400 })
   }
 
-  // Prevent assigning someone already on the workflow
+  if (existingReview.status === 'REMOVED') {
+    return NextResponse.json({ error: 'Cannot replace a reviewer who has been removed — add a new reviewer instead' }, { status: 400 })
+  }
+
+  // Prevent assigning someone already active on the workflow (REMOVED records don't count)
   const alreadyAssigned = document.reviews.some(
-    (r) => r.reviewerId === newReviewerId && r.id !== reviewId,
+    (r) => r.reviewerId === newReviewerId && r.id !== reviewId && r.status !== 'REMOVED',
   )
   if (alreadyAssigned) {
     return NextResponse.json(

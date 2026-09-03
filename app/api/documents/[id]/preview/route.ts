@@ -106,8 +106,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     })
   }
 
-  // Word documents — convert to HTML with mammoth
-  if (ext === 'docx') {
+  // Word documents — convert to HTML with mammoth (.doc and .docx)
+  if (ext === 'docx' || ext === 'doc') {
     const mammoth = await import('mammoth')
     const result = await mammoth.convertToHtml({ buffer })
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>

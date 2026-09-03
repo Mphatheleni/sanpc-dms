@@ -52,9 +52,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       data: { status: 'APPROVED', comments, reviewedAt: now },
     })
 
-    // Check if ALL approvers have now approved
+    // Check if ALL approvers have now approved (exclude REMOVED — they no longer count)
     const pendingApprovers = document.reviews.filter(
-      (r) => r.isApprover && r.id !== activeReview.id && r.status !== 'APPROVED'
+      (r) => r.isApprover && r.id !== activeReview.id && r.status !== 'APPROVED' && r.status !== 'REMOVED'
     )
 
     if (pendingApprovers.length === 0) {

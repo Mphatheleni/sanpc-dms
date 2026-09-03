@@ -16,8 +16,8 @@ import {
 import type { SessionUser } from '@/types'
 
 const navItems = [
-  { href: '/dashboard',      label: 'Dashboard',    icon: LayoutDashboard, roles: ['ADMIN', 'DOCUMENT_MANAGER', 'REVIEWER', 'APPROVER'] },
-  { href: '/documents',      label: 'Documents',    icon: FileText,        roles: ['ADMIN', 'DOCUMENT_MANAGER', 'REVIEWER', 'APPROVER'] },
+  { href: '/dashboard',      label: 'Dashboard',    icon: LayoutDashboard, roles: ['ADMIN', 'DOCUMENT_MANAGER', 'REVIEWER', 'APPROVER', 'ORIGINATOR'] },
+  { href: '/documents',      label: 'Documents',    icon: FileText,        roles: ['ADMIN', 'DOCUMENT_MANAGER', 'REVIEWER', 'APPROVER', 'ORIGINATOR'] },
   { href: '/documents/new',  label: 'New Document', icon: FilePlus,        roles: ['ADMIN', 'DOCUMENT_MANAGER'] },
   { href: '/reports',        label: 'Reports',      icon: BarChart2,       roles: ['ADMIN', 'DOCUMENT_MANAGER'] },
   { href: '/admin',          label: 'Users',        icon: Users,           roles: ['ADMIN'] },
@@ -28,6 +28,7 @@ const roleLabels: Record<string, string> = {
   DOCUMENT_MANAGER:  'Document Controller',
   REVIEWER:          'Reviewer',
   APPROVER:          'Approver',
+  ORIGINATOR:        'Originator',
 }
 
 const roleColors: Record<string, string> = {
@@ -35,6 +36,7 @@ const roleColors: Record<string, string> = {
   DOCUMENT_MANAGER: '#1C3557',
   REVIEWER:         '#7C3AED',
   APPROVER:         '#16A34A',
+  ORIGINATOR:       '#D97706',
 }
 
 function NavItems({

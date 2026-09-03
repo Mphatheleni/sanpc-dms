@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { sendReviewNotification } from '@/lib/email'
+import { sendReviewNotification, sendDeadlineExpiredEmail } from '@/lib/email'
 import { signReviewToken } from '@/lib/reviewToken'
+import { createNotification } from '@/lib/notify'
 
 /**
  * GET /api/cron/sla
@@ -20,7 +21,6 @@ export async function GET(req: NextRequest) {
   const now = new Date()
   const DAY_MS = 24 * 60 * 60 * 1000
   const DAY18 = new Date(now.getTime() - 18 * DAY_MS)
-  const DAY21 = new Date(now.getTime() - 21 * DAY_MS)
   const appUrl = process.env.APP_URL || 'http://localhost:3000'
 
   // ── 1. Day-18 reminders ───────────────────────────────────────────────────
@@ -67,91 +67,114 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // ── 2. Day-21 auto-advance (timeout) ─────────────────────────────────────
-  const timedOutReviews = await prisma.documentReview.findMany({
+  // ── 2. Deadline expired — move IN_REVIEW docs to CHANGES_REQUESTED ───────
+  // Uses the explicit per-review deadline field (respects per-doc reviewDeadlineDays setting)
+  const expiredReviews = await prisma.documentReview.findMany({
     where: {
       status: 'IN_PROGRESS',
-      startedAt: { lte: DAY21 },
+      isApprover: false,
+      deadline: { lte: now },
+      document: { status: 'IN_REVIEW' },
     },
-    include: {
-      document: { select: { id: true, status: true, reviews: { include: { reviewer: true } } } },
+    select: {
+      id: true,
+      documentId: true,
+      document: {
+        select: {
+          id: true, title: true,
+          uploadedById: true, originatorId: true,
+          uploadedBy: { select: { id: true, name: true, email: true } },
+          originatorUser: { select: { id: true, name: true, email: true } },
+        },
+      },
     },
   })
 
-  let autoAdvanced = 0
-  // Group by documentId to handle multi-reviewer documents
-  const byDoc = new Map<string, typeof timedOutReviews>()
-  for (const rev of timedOutReviews) {
-    const list = byDoc.get(rev.documentId) ?? []
-    list.push(rev)
-    byDoc.set(rev.documentId, list)
-  }
+  // De-duplicate — only process each document once
+  const seenDocs = new Set<string>()
+  let deadlineExpired = 0
 
-  for (const [documentId, revs] of byDoc) {
-    const doc = revs[0].document
-    if (doc.status !== 'IN_REVIEW' && doc.status !== 'PENDING_APPROVAL' && doc.status !== 'FINAL_DRAFT') continue
+  for (const rev of expiredReviews) {
+    if (seenDocs.has(rev.documentId)) continue
+    seenDocs.add(rev.documentId)
+    const doc = rev.document
+    const appUrl = process.env.APP_URL || 'http://localhost:3000'
+    const documentUrl = `${appUrl}/documents/${rev.documentId}`
 
-    // Mark all timed-out reviews as APPROVED (auto-passed)
-    await prisma.documentReview.updateMany({
-      where: { id: { in: revs.map((r) => r.id) }, status: 'IN_PROGRESS' },
-      data: {
-        status: 'APPROVED',
-        reviewedAt: now,
-        comments: 'Auto-approved: no response within 21 days (per CSS/PR/CSF/005)',
-      },
-    })
-
-    // Check if all reviews for the document are now complete
-    const allDocReviews = doc.reviews.filter((r) => !r.isApprover)
-    const allApproverReviews = doc.reviews.filter((r) => r.isApprover)
-    const updatedIds = new Set(revs.map((r) => r.id))
-
-    if (doc.status === 'IN_REVIEW') {
-      // Check if all reviewers are now done
-      const allReviewersDone = allDocReviews.every(
-        (r) => r.status === 'APPROVED' || updatedIds.has(r.id)
-      )
-      if (allReviewersDone) {
-        await prisma.document.update({
-          where: { id: documentId },
-          data: { status: 'REVIEW_COMPLETE' },
-        })
-        await prisma.documentActivity.create({
+    try {
+      await prisma.$transaction([
+        // Pause all still-active reviewer reviews
+        prisma.documentReview.updateMany({
+          where: { documentId: rev.documentId, isApprover: false, status: 'IN_PROGRESS' },
+          data: { status: 'PENDING', startedAt: null, deadline: null },
+        }),
+        // Move document to CHANGES_REQUESTED
+        prisma.document.update({
+          where: { id: rev.documentId },
+          data: { status: 'CHANGES_REQUESTED' as never },
+        }),
+        // Audit log
+        prisma.documentActivity.create({
           data: {
-            documentId,
-            userId: revs[0].reviewerId,
-            action: 'REVIEW_APPROVED',
-            details: 'Auto-advanced: 21-day review timeout (CSS/PR/CSF/005)',
+            documentId: rev.documentId,
+            userId: doc.uploadedById,
+            action: 'STATUS_CHANGED',
+            details: 'IN_REVIEW → CHANGES_REQUESTED (review deadline expired — CSS/PR/CSF/005)',
           },
-        })
-        autoAdvanced++
-      }
-    } else if (doc.status === 'PENDING_APPROVAL' || doc.status === 'FINAL_DRAFT') {
-      const allApproversDone = allApproverReviews.every(
-        (r) => r.status === 'APPROVED' || updatedIds.has(r.id)
+        }),
+      ])
+
+      // In-app: notify DC
+      createNotification(
+        doc.uploadedById,
+        'STATUS_CHANGE',
+        `Review Deadline Expired: ${doc.title}`,
+        `The review period for "${doc.title}" has ended. The document has been returned to Changes Requested.`,
+        rev.documentId,
       )
-      if (allApproversDone) {
-        await prisma.document.update({
-          where: { id: documentId },
-          data: { status: 'APPROVED' },
-        })
-        await prisma.documentActivity.create({
-          data: {
-            documentId,
-            userId: revs[0].reviewerId,
-            action: 'APPROVED',
-            details: 'Auto-approved: 21-day approval timeout (CSS/PR/CSF/005)',
-          },
-        })
-        autoAdvanced++
+
+      // In-app: notify originator (if different from DC)
+      const originatorId = doc.originatorId
+      if (originatorId && originatorId !== doc.uploadedById) {
+        createNotification(
+          originatorId,
+          'CHANGES_REQUESTED',
+          `Review Deadline Expired: ${doc.title}`,
+          `The 21-day review window for "${doc.title}" has closed. Please update the document and resubmit.`,
+          rev.documentId,
+        )
       }
+
+      // Email: DC
+      await sendDeadlineExpiredEmail({
+        toEmail: doc.uploadedBy.email,
+        toName: doc.uploadedBy.name,
+        documentTitle: doc.title,
+        documentUrl,
+        isDC: true,
+      }).catch((e) => console.error('[sla-cron] DC deadline email error:', e))
+
+      // Email: originator (if different from DC)
+      if (doc.originatorUser && doc.originatorUser.id !== doc.uploadedById) {
+        await sendDeadlineExpiredEmail({
+          toEmail: doc.originatorUser.email,
+          toName: doc.originatorUser.name,
+          documentTitle: doc.title,
+          documentUrl,
+          isDC: false,
+        }).catch((e) => console.error('[sla-cron] originator deadline email error:', e))
+      }
+
+      deadlineExpired++
+    } catch (err) {
+      console.error(`[sla-cron] deadline-expire failed for doc ${rev.documentId}:`, err)
     }
   }
 
   return NextResponse.json({
     ok: true,
     reminders: remindersSet,
-    autoAdvanced,
+    deadlineExpired,
     checkedAt: now.toISOString(),
   })
 }

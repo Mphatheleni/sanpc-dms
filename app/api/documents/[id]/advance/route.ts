@@ -21,7 +21,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     select: {
       id: true, title: true, status: true,
       uploadedById: true, sharePointUrl: true, reviewDeadlineDays: true,
-      uploadedBy: { select: { name: true, email: true } },
+      uploadedBy: { select: { id: true, name: true, email: true } },
+      originatorUser: { select: { id: true, name: true, email: true } },
       reviews: {
         include: { reviewer: { select: { id: true, name: true, email: true } } },
         orderBy: { order: 'asc' },
@@ -39,7 +40,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: 'Document is not ready to advance to approval' }, { status: 400 })
   }
 
-  const approverReviews = document.reviews.filter((r) => r.isApprover)
+  const approverReviews = document.reviews.filter((r) => r.isApprover && r.status !== 'REMOVED')
 
   if (approverReviews.length === 0) {
     // No approvers configured — mark as fully approved
@@ -103,14 +104,29 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   // S12: Notify Document Controller — awaited so Cloud Run doesn't kill it
   const appUrl = process.env.APP_URL || 'http://localhost:3000'
-  try {
-    await sendDocControllerNotification({
+  const stageMails: Promise<void>[] = [
+    sendDocControllerNotification({
       toEmail: document.uploadedBy.email ?? '',
       toName: document.uploadedBy.name ?? '',
       documentTitle: document.title,
       documentUrl: `${appUrl}/documents/${id}`,
       stage: 'IN_APPROVAL',
-    })
+    }),
+  ]
+  // Mirror to originator if set and different from uploader
+  if (document.originatorUser && document.originatorUser.id !== document.uploadedBy.id) {
+    stageMails.push(
+      sendDocControllerNotification({
+        toEmail: document.originatorUser.email,
+        toName: document.originatorUser.name,
+        documentTitle: document.title,
+        documentUrl: `${appUrl}/documents/${id}`,
+        stage: 'IN_APPROVAL',
+      })
+    )
+  }
+  try {
+    await Promise.all(stageMails.map((p) => p.catch((e) => console.error('[advance] stage email error:', e))))
   } catch (err) {
     console.error('[advance] doc controller email error:', err)
   }

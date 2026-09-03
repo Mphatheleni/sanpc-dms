@@ -20,6 +20,7 @@ export default async function DocumentsPage({ searchParams }: PageProps) {
   const where: any = {}
   if (session.role === 'REVIEWER') where.reviews = { some: { reviewerId: session.userId } }
   else if (session.role === 'APPROVER') where.reviews = { some: { reviewerId: session.userId, isApprover: true } }
+  else if (session.role === 'ORIGINATOR') where.originatorId = session.userId
   // ADMIN and DOCUMENT_MANAGER see all documents
 
   if (search) where.OR = [
@@ -33,6 +34,8 @@ export default async function DocumentsPage({ searchParams }: PageProps) {
     where,
     include: {
       uploadedBy: { select: { id: true, name: true, email: true, role: true } },
+      originatorUser: { select: { id: true, name: true, email: true, role: true } },
+      authorizerUser: { select: { id: true, name: true, email: true, role: true } },
       metadata: true,
       reviews: {
         include: { reviewer: { select: { id: true, name: true, email: true, role: true } } },
@@ -42,6 +45,8 @@ export default async function DocumentsPage({ searchParams }: PageProps) {
         include: { author: { select: { id: true, name: true, email: true, role: true } } },
         orderBy: { createdAt: 'asc' },
       },
+      // DLT-09: attachment count for document list indicator
+      _count: { select: { attachments: true } },
     },
     orderBy: { updatedAt: 'desc' },
   })
@@ -56,12 +61,12 @@ export default async function DocumentsPage({ searchParams }: PageProps) {
     REGISTERED: 'Registered',
     DRAFT: 'Draft',
     PENDING_REVIEW: 'Pending Review',
-    IN_REVIEW: 'RV — In Review',
-    UPDATING: 'RU — Updating',
-    REVIEW_COMPLETE: 'RU — Request Update',
-    FINAL_DRAFT: 'FD — Final Draft',
-    PENDING_APPROVAL: 'FD — Final Draft',
-    APPROVED: 'AP — Approved',
+    IN_REVIEW: 'In Review',
+    UPDATING: 'Request Update',
+    REVIEW_COMPLETE: 'Review Complete',
+    FINAL_DRAFT: 'Final Draft',
+    PENDING_APPROVAL: 'Pending Approval',
+    APPROVED: 'Approved',
     EXCO_PENDING: 'EXCO Pending',
     REJECTED: 'Rejected',
     CHANGES_REQUESTED: 'Changes Requested',

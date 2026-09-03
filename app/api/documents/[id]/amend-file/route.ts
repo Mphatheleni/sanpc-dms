@@ -37,7 +37,8 @@ export async function POST(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const allowedStatuses = ['UPDATING', 'REVIEW_COMPLETE', 'IN_REVIEW', 'FINAL_DRAFT', 'PENDING_APPROVAL', 'REJECTED', 'CHANGES_REQUESTED']
+  // W-5.5: document is locked during active review — only replaceable at Request Update / post-rejection stages
+  const allowedStatuses = ['UPDATING', 'REVIEW_COMPLETE', 'FINAL_DRAFT', 'PENDING_APPROVAL', 'REJECTED', 'CHANGES_REQUESTED']
   if (!allowedStatuses.includes(document.status)) {
     return NextResponse.json({ error: 'File replacement not allowed at this stage' }, { status: 400 })
   }
@@ -124,7 +125,7 @@ export async function POST(
       fileType: mimeType,
       fileSize: file.size,
       version: newVersion,
-      ...(newSharePointUrl ? { sharePointUrl: newSharePointUrl } : {}),
+      ...(newSharePointUrl ? { sharePointUrl: newSharePointUrl, sharePointItemId: storedName } : {}),
     },
   })
 

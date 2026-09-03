@@ -14,6 +14,15 @@ export async function POST(request: NextRequest) {
   const file = formData.get('file') as File | null
   if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 })
 
+  // DLT-02: Primary document must be Word (.docx/.doc). PDF belongs in Attachments only.
+  const fileExt = file.name.split('.').pop()?.toLowerCase()
+  if (fileExt === 'pdf' || file.type === 'application/pdf') {
+    return NextResponse.json(
+      { error: 'PDF files cannot be the primary document. The master must be a Word file (.docx/.doc). Upload the signed PDF via the Attachments tab once the document is Approved.' },
+      { status: 400 },
+    )
+  }
+
   const buffer = Buffer.from(await file.arrayBuffer())
   const ext = path.extname(file.name)
   const uniqueName = `${randomUUID()}${ext}`

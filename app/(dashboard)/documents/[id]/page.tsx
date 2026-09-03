@@ -37,6 +37,12 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
 
   if (!document) notFound()
 
+  // ORIGINATOR can only view their own originated documents
+  if (
+    session.role === 'ORIGINATOR' &&
+    document.originatorId !== session.userId
+  ) notFound()
+
   const sessionUser: SessionUser = {
     userId: session.userId,
     email: session.email,
