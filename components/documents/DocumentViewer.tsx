@@ -35,6 +35,7 @@ export default function DocumentViewer({ documentId, fileName, fileType }: Docum
   const [htmlContent, setHtmlContent] = useState<string | null>(null)
   const [textContent, setTextContent] = useState<string | null>(null)
   const [notPreviewable, setNotPreviewable] = useState(false)
+  const [previewError, setPreviewError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
   const previewType = getPreviewType(fileName)
@@ -45,10 +46,13 @@ export default function DocumentViewer({ documentId, fileName, fileType }: Docum
     if (!expanded) return
     if (previewType === 'html' || previewType === 'text') {
       setLoading(true)
+      setPreviewError(null)
       fetch(previewUrl)
         .then(async (res) => {
           const contentType = res.headers.get('content-type') || ''
           if (contentType.includes('application/json')) {
+            const json = await res.json().catch(() => ({}))
+            setPreviewError(json.error || json.message || `HTTP ${res.status}`)
             setNotPreviewable(true)
           } else if (contentType.includes('text/html')) {
             const text = await res.text()
@@ -58,7 +62,7 @@ export default function DocumentViewer({ documentId, fileName, fileType }: Docum
             setTextContent(text)
           }
         })
-        .catch(() => setNotPreviewable(true))
+        .catch((err) => { setPreviewError(String(err)); setNotPreviewable(true) })
         .finally(() => setLoading(false))
     } else if (previewType === 'none') {
       setNotPreviewable(true)
@@ -154,7 +158,9 @@ export default function DocumentViewer({ documentId, fileName, fileType }: Docum
           {!loading && (notPreviewable || previewType === 'none') && (
             <div className="flex flex-col items-center justify-center h-40 gap-3 text-gray-400">
               <FileX className="h-10 w-10 opacity-40" />
-              <p className="text-sm">Preview not available for this file type.</p>
+              <p className="text-sm">
+                {previewError ? `Preview error: ${previewError}` : 'Preview not available for this file type.'}
+              </p>
               <a
                 href={downloadUrl}
                 download={fileName}
