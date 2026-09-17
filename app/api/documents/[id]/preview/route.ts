@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { getFilePath } from '@/lib/file'
-import { downloadFromSharePoint } from '@/lib/sharepoint'
+import { downloadFromSharePoint, getSharePointPreviewUrl } from '@/lib/sharepoint'
 import { downloadFromGCS, isGCSConfigured } from '@/lib/gcs'
 import { readFile } from 'fs/promises'
 import { existsSync } from 'fs'
@@ -111,27 +111,36 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     })
   }
 
-  // Word documents — convert to HTML with mammoth (.doc and .docx)
+  // Word documents — use Office Online embed for SharePoint files (handles both .doc and .docx)
   if (ext === 'docx' || ext === 'doc') {
-    const mammothMod = await import('mammoth')
-    // Handle both ESM default-export and CJS named-export interop patterns
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mammoth = (mammothMod as any).default ?? mammothMod
-    const result = await mammoth.convertToHtml({ buffer })
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-      body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; color: #111; }
-      h1,h2,h3,h4 { margin-top: 1.5em; }
-      table { border-collapse: collapse; width: 100%; }
-      td, th { border: 1px solid #ddd; padding: 6px 12px; }
-      th { background: #f5f5f5; }
-    </style></head><body>${result.value}</body></html>`
-    return new NextResponse(html, {
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    })
+    if (document.sharePointItemId) {
+      const previewUrl = await getSharePointPreviewUrl(document.sharePointItemId)
+      return NextResponse.json({ previewUrl })
+    }
+    // Fallback: mammoth for .docx not in SharePoint
+    if (ext === 'docx') {
+      const mammothMod = await import('mammoth')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mammoth = (mammothMod as any).default ?? mammothMod
+      const result = await mammoth.convertToHtml({ buffer })
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+        body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; color: #111; }
+        h1,h2,h3,h4 { margin-top: 1.5em; }
+        table { border-collapse: collapse; width: 100%; }
+        td, th { border: 1px solid #ddd; padding: 6px 12px; }
+        th { background: #f5f5f5; }
+      </style></head><body>${result.value}</body></html>`
+      return new NextResponse(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+    }
+    return NextResponse.json({ previewable: false, message: 'Preview not available for .doc files not stored in SharePoint. Please download to view.' })
   }
 
-  // Excel — convert first sheet to HTML table with xlsx
+  // Excel — use Office Online embed for SharePoint files
   if (ext === 'xlsx' || ext === 'xls') {
+    if (document.sharePointItemId) {
+      const previewUrl = await getSharePointPreviewUrl(document.sharePointItemId)
+      return NextResponse.json({ previewUrl })
+    }
     const xlsxMod = await import('xlsx')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const XLSX = (xlsxMod as any).default ?? xlsxMod

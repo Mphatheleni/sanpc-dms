@@ -34,6 +34,7 @@ export default function DocumentViewer({ documentId, fileName, fileType }: Docum
   const [expanded, setExpanded] = useState(true)
   const [htmlContent, setHtmlContent] = useState<string | null>(null)
   const [textContent, setTextContent] = useState<string | null>(null)
+  const [officePreviewUrl, setOfficePreviewUrl] = useState<string | null>(null)
   const [notPreviewable, setNotPreviewable] = useState(false)
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -52,8 +53,12 @@ export default function DocumentViewer({ documentId, fileName, fileType }: Docum
           const contentType = res.headers.get('content-type') || ''
           if (contentType.includes('application/json')) {
             const json = await res.json().catch(() => ({}))
-            setPreviewError(json.details || json.error || json.message || `HTTP ${res.status}`)
-            setNotPreviewable(true)
+            if (json.previewUrl) {
+              setOfficePreviewUrl(json.previewUrl)
+            } else {
+              setPreviewError(json.details || json.error || json.message || `HTTP ${res.status}`)
+              setNotPreviewable(true)
+            }
           } else if (contentType.includes('text/html')) {
             const text = await res.text()
             setHtmlContent(text)
@@ -137,6 +142,15 @@ export default function DocumentViewer({ documentId, fileName, fileType }: Docum
                 className="max-w-full max-h-[75vh]"
               />
             </div>
+          )}
+
+          {!loading && officePreviewUrl && (
+            <iframe
+              src={officePreviewUrl}
+              className="w-full border-0 bg-white"
+              style={{ height: '75vh' }}
+              title={fileName}
+            />
           )}
 
           {!loading && previewType === 'html' && htmlContent && (

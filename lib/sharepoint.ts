@@ -210,6 +210,27 @@ export async function replaceFileInSharePoint(
   return { webUrl: finalItem.webUrl as string }
 }
 
+/**
+ * Get an Office Online embed URL for a SharePoint item.
+ * Works for .doc, .docx, .xlsx, .pptx etc — no conversion needed.
+ */
+export async function getSharePointPreviewUrl(itemId: string): Promise<string> {
+  const token = await getToken()
+  const siteId = process.env.SHAREPOINT_SITE_ID!
+  const driveId = process.env.SHAREPOINT_DRIVE_ID!
+  const res = await fetch(
+    `${GRAPH}/sites/${siteId}/drives/${driveId}/items/${itemId}/preview`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    },
+  )
+  if (!res.ok) throw new Error(`SharePoint preview failed: ${res.status} ${await res.text()}`)
+  const data = await res.json()
+  return data.getUrl as string
+}
+
 /** Stream a file from SharePoint by item ID. Returns a Response-compatible body. */
 export async function downloadFromSharePoint(itemId: string): Promise<{ body: ReadableStream; contentType: string }> {
   const token = await getToken()
