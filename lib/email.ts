@@ -1,32 +1,43 @@
 /**
- * Email notifications via SMTP (Office 365 / smtp.office365.com:587 STARTTLS).
+ * Email notifications via Microsoft Graph API (application permissions).
  *
- * Uses nodemailer with the sender's mailbox credentials — no Azure AD
- * application permissions required.
+ * Uses the Azure AD app registration credentials to obtain a client-credentials
+ * token and calls /users/{sender}/sendMail — no mailbox password required.
  *
  * Required env vars:
- *   MAIL_SENDER   — M365 mailbox address (e.g. noreply@sa-npc.co.za)
- *   MAIL_PASSWORD — Mailbox password (stored in Cloud Secret Manager)
- *   APP_URL       — Public base URL of this app (used in email links)
+ *   MAIL_SENDER          — M365 mailbox the app sends FROM (needs Mail.Send app permission)
+ *   AZURE_TENANT_ID      — Azure AD tenant ID
+ *   AZURE_CLIENT_ID      — App registration client ID
+ *   AZURE_CLIENT_SECRET  — App registration client secret
+ *   APP_URL              — Public base URL of this app (used in email links)
  */
 
-import nodemailer from 'nodemailer'
-
 export function isEmailConfigured(): boolean {
-  return !!(process.env.MAIL_SENDER && process.env.MAIL_PASSWORD)
+  return !!(
+    process.env.MAIL_SENDER &&
+    process.env.AZURE_TENANT_ID &&
+    process.env.AZURE_CLIENT_ID &&
+    process.env.AZURE_CLIENT_SECRET
+  )
 }
 
-function createTransport() {
-  return nodemailer.createTransport({
-    host: 'smtp.office365.com',
-    port: 587,
-    secure: false, // STARTTLS
-    auth: {
-      user: process.env.MAIL_SENDER!,
-      pass: process.env.MAIL_PASSWORD!,
+async function getGraphToken(): Promise<string> {
+  const res = await fetch(
+    `https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID}/oauth2/v2.0/token`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: process.env.AZURE_CLIENT_ID!,
+        client_secret: process.env.AZURE_CLIENT_SECRET!,
+        scope: 'https://graph.microsoft.com/.default',
+        grant_type: 'client_credentials',
+      }),
     },
-    tls: { ciphers: 'SSLv3' },
-  })
+  )
+  if (!res.ok) throw new Error(`[email] token request failed: ${await res.text()}`)
+  const data = await res.json()
+  return data.access_token as string
 }
 
 async function sendViaGraph(
@@ -36,14 +47,28 @@ async function sendViaGraph(
   htmlBody: string,
 ): Promise<void> {
   const sender = process.env.MAIL_SENDER!
-  const transport = createTransport()
-  await transport.sendMail({
-    from: `"SANPC DMS" <${sender}>`,
-    to: `"${toName}" <${toEmail}>`,
-    subject,
-    html: htmlBody,
-  })
-  console.log(`[email] sent via SMTP from ${sender} to ${toEmail}`)
+  const token = await getGraphToken()
+  const res = await fetch(
+    `https://graph.microsoft.com/v1.0/users/${sender}/sendMail`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: {
+          subject,
+          body: { contentType: 'HTML', content: htmlBody },
+          toRecipients: [{ emailAddress: { address: toEmail, name: toName } }],
+          from: { emailAddress: { address: sender, name: 'SANPC DMS' } },
+        },
+        saveToSentItems: false,
+      }),
+    },
+  )
+  if (!res.ok) throw new Error(`[email] Graph sendMail failed: ${await res.text()}`)
+  console.log(`[email] sent via Graph from ${sender} to ${toEmail}`)
 }
 
 /* ── HTML helpers ────────────────────────────────────────────────────────── */

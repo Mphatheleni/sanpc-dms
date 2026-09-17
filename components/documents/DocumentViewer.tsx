@@ -52,7 +52,7 @@ export default function DocumentViewer({ documentId, fileName, fileType }: Docum
           const contentType = res.headers.get('content-type') || ''
           if (contentType.includes('application/json')) {
             const json = await res.json().catch(() => ({}))
-            setPreviewError(json.error || json.message || `HTTP ${res.status}`)
+            setPreviewError(json.details || json.error || json.message || `HTTP ${res.status}`)
             setNotPreviewable(true)
           } else if (contentType.includes('text/html')) {
             const text = await res.text()
