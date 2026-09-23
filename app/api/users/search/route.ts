@@ -39,13 +39,12 @@ export async function GET(req: NextRequest) {
   try {
     const token = await getToken()
 
-    const params = new URLSearchParams({
-      '$search': `"displayName:${q}"`,
-      '$select': 'displayName,mail,userPrincipalName,jobTitle',
-      '$top': '15',
-    })
+    // Build the URL manually — URLSearchParams encodes $ and : which breaks Graph API $search syntax
+    const safeQ = q.replace(/'/g, "''").replace(/"/g, '')
+    const searchVal = encodeURIComponent(`"displayName:${safeQ}" OR "userPrincipalName:${safeQ}"`)
+    const url = `${GRAPH}/users?$search=${searchVal}&$select=displayName,mail,userPrincipalName&$top=15&$count=true`
 
-    const res = await fetch(`${GRAPH}/users?${params}`, {
+    const res = await fetch(url, {
       headers: {
         Authorization: `Bearer ${token}`,
         ConsistencyLevel: 'eventual',
