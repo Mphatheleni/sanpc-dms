@@ -183,7 +183,11 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
       const res = await fetch(`/api/documents/${doc.id}/replace-reviewer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reviewId: replaceTarget.reviewId, newReviewerId: replaceUser.id }),
+        body: JSON.stringify(
+          replaceUser.id
+            ? { reviewId: replaceTarget.reviewId, newReviewerId: replaceUser.id }
+            : { reviewId: replaceTarget.reviewId, newReviewerEmail: replaceUser.email, newReviewerName: replaceUser.name }
+        ),
       })
       if (res.ok) {
         const updated = await res.json()
@@ -203,7 +207,11 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
       const res = await fetch(`/api/documents/${doc.id}/add-reviewer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ newReviewerId: addUser.id, isApprover: addTarget.isApprover }),
+        body: JSON.stringify(
+          addUser.id
+            ? { newReviewerId: addUser.id, isApprover: addTarget.isApprover }
+            : { newReviewerEmail: addUser.email, newReviewerName: addUser.name, isApprover: addTarget.isApprover }
+        ),
       })
       if (res.ok) {
         const updated = await res.json()
@@ -448,10 +456,9 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
                       <div className="flex items-end gap-2 flex-wrap">
                         <div className="flex-1 min-w-[220px]">
                           <UserPicker
-                            users={pool}
+                            azureSearch
                             value={replaceUser}
                             onChange={setReplaceUser}
-                            placeholder="Search by name or email…"
                           />
                         </div>
                         <button
@@ -512,15 +519,9 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
             <div className="flex items-end gap-2 flex-wrap">
               <div className="flex-1 min-w-[220px]">
                 <UserPicker
-                  users={users.filter((u) => {
-                    const roleOk = isApproverGroup
-                      ? u.role === 'APPROVER' || u.role === 'ADMIN'
-                      : u.role === 'REVIEWER' || u.role === 'APPROVER' || u.role === 'ADMIN'
-                    return roleOk && !doc.reviews.some((r) => r.reviewerId === u.id && r.status !== 'REMOVED')
-                  })}
+                  azureSearch
                   value={addUser}
                   onChange={setAddUser}
-                  placeholder="Search by name or email…"
                 />
               </div>
               <button

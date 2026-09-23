@@ -35,12 +35,30 @@ export async function POST(
     session.role === 'DOCUMENT_MANAGER'
   if (!canManage) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  const { newReviewerId, isApprover } = await req.json()
-  if (!newReviewerId) return NextResponse.json({ error: 'newReviewerId is required' }, { status: 400 })
+  const { newReviewerId, newReviewerEmail, newReviewerName, isApprover } = await req.json()
+  if (!newReviewerId && !newReviewerEmail) {
+    return NextResponse.json({ error: 'newReviewerId or newReviewerEmail is required' }, { status: 400 })
+  }
 
   const terminalStatuses = ['APPROVED', 'CONTROLLED', 'SUPERSEDED', 'CANCELLED']
   if (terminalStatuses.includes(document.status)) {
     return NextResponse.json({ error: 'Cannot modify workflow of a finalised document' }, { status: 400 })
+  }
+
+  // Auto-provision AD users not yet in the DB
+  let resolvedId: string = newReviewerId
+  if (!resolvedId && newReviewerEmail) {
+    const upserted = await prisma.user.upsert({
+      where: { email: newReviewerEmail.toLowerCase().trim() },
+      update: {},
+      create: {
+        name: newReviewerName ?? newReviewerEmail,
+        email: newReviewerEmail.toLowerCase().trim(),
+        role: 'REVIEWER',
+        password: '',
+      },
+    })
+    resolvedId = upserted.id
   }
 
   // Active statuses where the new person should be immediately notified
@@ -49,14 +67,14 @@ export async function POST(
 
   // Prevent duplicates — REMOVED records don't count, so removed people can be re-added
   const alreadyAssigned = document.reviews.some(
-    (r) => r.reviewerId === newReviewerId && r.status !== 'REMOVED'
+    (r) => r.reviewerId === resolvedId && r.status !== 'REMOVED'
   )
   if (alreadyAssigned) {
     return NextResponse.json({ error: 'This person is already in the review workflow' }, { status: 400 })
   }
 
   const newReviewer = await prisma.user.findUnique({
-    where: { id: newReviewerId },
+    where: { id: resolvedId },
     select: { id: true, name: true, email: true },
   })
   if (!newReviewer) return NextResponse.json({ error: 'User not found' }, { status: 404 })
@@ -68,7 +86,7 @@ export async function POST(
   const newReview = await prisma.documentReview.create({
     data: {
       documentId: id,
-      reviewerId: newReviewerId,
+      reviewerId: resolvedId,
       order: maxOrder + 1,
       isApprover: !!isApprover,
       // If document is already in an active review stage, start immediately; otherwise keep PENDING until submit
@@ -83,7 +101,7 @@ export async function POST(
     const reviewToken = await signReviewToken({
       documentId: id,
       reviewId: newReview.id,
-      reviewerId: newReviewerId,
+      reviewerId: resolvedId,
       isApprover: !!isApprover,
     })
     const appUrl = process.env.APP_URL || 'http://localhost:3000'

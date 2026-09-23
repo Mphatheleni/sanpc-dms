@@ -41,9 +41,9 @@ export async function POST(
     return NextResponse.json({ error: 'Cannot modify workflow of a finalised document' }, { status: 400 })
   }
 
-  const { reviewId, newReviewerId } = await req.json()
-  if (!reviewId || !newReviewerId) {
-    return NextResponse.json({ error: 'reviewId and newReviewerId are required' }, { status: 400 })
+  const { reviewId, newReviewerId, newReviewerEmail, newReviewerName } = await req.json()
+  if (!reviewId || (!newReviewerId && !newReviewerEmail)) {
+    return NextResponse.json({ error: 'reviewId and newReviewerId (or newReviewerEmail) are required' }, { status: 400 })
   }
 
   const existingReview = document.reviews.find((r) => r.id === reviewId)
@@ -59,9 +59,25 @@ export async function POST(
     return NextResponse.json({ error: 'Cannot replace a reviewer who has been removed — add a new reviewer instead' }, { status: 400 })
   }
 
+  // Auto-provision AD users not yet in the DB
+  let resolvedId: string = newReviewerId
+  if (!resolvedId && newReviewerEmail) {
+    const upserted = await prisma.user.upsert({
+      where: { email: newReviewerEmail.toLowerCase().trim() },
+      update: {},
+      create: {
+        name: newReviewerName ?? newReviewerEmail,
+        email: newReviewerEmail.toLowerCase().trim(),
+        role: 'REVIEWER',
+        password: '',
+      },
+    })
+    resolvedId = upserted.id
+  }
+
   // Prevent assigning someone already active on the workflow (REMOVED records don't count)
   const alreadyAssigned = document.reviews.some(
-    (r) => r.reviewerId === newReviewerId && r.id !== reviewId && r.status !== 'REMOVED',
+    (r) => r.reviewerId === resolvedId && r.id !== reviewId && r.status !== 'REMOVED',
   )
   if (alreadyAssigned) {
     return NextResponse.json(
@@ -72,7 +88,7 @@ export async function POST(
 
   // Fetch the new reviewer
   const newReviewer = await prisma.user.findUnique({
-    where: { id: newReviewerId },
+    where: { id: resolvedId },
     select: { id: true, name: true, email: true, role: true },
   })
   if (!newReviewer) return NextResponse.json({ error: 'New reviewer not found' }, { status: 404 })
@@ -85,17 +101,17 @@ export async function POST(
     // Pre-submission: just swap the reviewer ID, keep PENDING — no emails (they were never notified)
     await prisma.documentReview.update({
       where: { id: reviewId },
-      data: { reviewerId: newReviewerId, reviewedAt: null, comments: null },
+      data: { reviewerId: resolvedId, reviewedAt: null, comments: null },
     })
   } else {
     // Active review: swap reviewer, refresh timestamps, notify both parties
     await prisma.documentReview.update({
       where: { id: reviewId },
-      data: { reviewerId: newReviewerId, status: 'IN_PROGRESS', startedAt: now, deadline, reviewedAt: null, comments: null },
+      data: { reviewerId: resolvedId, status: 'IN_PROGRESS', startedAt: now, deadline, reviewedAt: null, comments: null },
     })
 
     const reviewToken = await signReviewToken({
-      documentId: id, reviewId, reviewerId: newReviewerId, isApprover: existingReview.isApprover,
+      documentId: id, reviewId, reviewerId: resolvedId, isApprover: existingReview.isApprover,
     })
     const appUrl = process.env.APP_URL || 'http://localhost:3000'
     try {
