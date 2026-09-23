@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { calcDeadline } from '@/lib/sla'
-import { sendBulkReviewNotificationsAsync } from '@/lib/email'
+import { sendBulkReviewNotificationsAsync, sendDocControllerNotification } from '@/lib/email'
 import { signReviewToken } from '@/lib/reviewToken'
 import { createNotification } from '@/lib/notify'
 
@@ -100,6 +100,14 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       })
     )
     await sendBulkReviewNotificationsAsync(notifications)
+    // Notify DC that document has been resubmitted for approval
+    await sendDocControllerNotification({
+      toEmail: document.uploadedBy.email,
+      toName: document.uploadedBy.name,
+      documentTitle: document.title,
+      documentUrl: `${appUrl}/documents/${id}`,
+      stage: 'IN_APPROVAL',
+    })
   } catch (err) {
     console.error('[resubmit-for-approval] email error:', err)
   }

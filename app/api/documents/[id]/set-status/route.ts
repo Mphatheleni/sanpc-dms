@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { createNotification } from '@/lib/notify'
+import { sendStatusChangeEmail } from '@/lib/email'
 
 const VALID_STATUSES = [
   'REGISTERED', 'DRAFT', 'PENDING_REVIEW', 'IN_REVIEW', 'UPDATING',
@@ -56,7 +57,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     select: {
       id: true, title: true, status: true, documentNumber: true,
       uploadedById: true, originatorId: true,
-      uploadedBy: { select: { id: true, name: true } },
+      uploadedBy: { select: { id: true, name: true, email: true } },
+      originatorUser: { select: { id: true, name: true, email: true } },
     },
   })
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -135,6 +137,32 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       `"${doc.title}" status changed from ${oldStatus.replace(/_/g, ' ')} to ${newStatus.replace(/_/g, ' ')}${reason ? `. Reason: ${reason}` : '.'}`,
       id,
     )
+  }
+
+  // Email originator and uploader for key status transitions
+  const EMAIL_STATUSES = new Set(['CONTROLLED', 'SUPERSEDED', 'CANCELLED', 'APPROVED', 'REJECTED'])
+  if (EMAIL_STATUSES.has(newStatus)) {
+    const appUrl = process.env.APP_URL || 'http://localhost:3000'
+    const documentUrl = `${appUrl}/documents/${id}`
+    const recipients = new Map<string, { name: string; email: string }>()
+    // Uploader
+    recipients.set(doc.uploadedById, { name: doc.uploadedBy.name, email: doc.uploadedBy.email })
+    // Originator (if different)
+    if (doc.originatorUser && doc.originatorUser.id !== doc.uploadedById) {
+      recipients.set(doc.originatorUser.id, { name: doc.originatorUser.name, email: doc.originatorUser.email })
+    }
+    // Don't email the DC themselves
+    recipients.delete(session.userId)
+    for (const recipient of recipients.values()) {
+      sendStatusChangeEmail({
+        toEmail: recipient.email,
+        toName: recipient.name,
+        documentTitle: doc.title,
+        documentUrl,
+        newStatus,
+        reason: reason ?? null,
+      }).catch((err) => console.error('[set-status] email error:', err))
+    }
   }
 
   const updated = await prisma.document.findUnique({ where: { id }, include: docInclude })

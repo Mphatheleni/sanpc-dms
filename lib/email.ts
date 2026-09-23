@@ -473,3 +473,56 @@ export async function sendDocumentUpdatedEmail(props: {
 </body></html>`
   await sendViaGraph(props.toEmail, props.toName, `[SANPC DMS] Document Updated: ${props.documentTitle}`, html)
 }
+
+/* ── Manual status change notification (CONTROLLED, SUPERSEDED, CANCELLED etc) ── */
+
+const STATUS_EMAIL_CONFIG: Record<string, { label: string; color: string; bg: string; message: string }> = {
+  CONTROLLED:  { label: 'Document Controlled',  color: '#16A34A', bg: '#F0FDF4', message: 'Your document has been officially controlled and published to the document repository.' },
+  SUPERSEDED:  { label: 'Document Superseded',  color: '#6B7280', bg: '#F9FAFB', message: 'Your document has been superseded by a newer revision and is no longer the current version.' },
+  CANCELLED:   { label: 'Document Cancelled',   color: '#DC2626', bg: '#FEF2F2', message: 'Your document has been cancelled by the Document Controller.' },
+  APPROVED:    { label: 'Document Approved',    color: '#16A34A', bg: '#F0FDF4', message: 'Your document has been approved by the Document Controller.' },
+  REJECTED:    { label: 'Document Rejected',    color: '#DC2626', bg: '#FEF2F2', message: 'Your document has been rejected by the Document Controller.' },
+}
+
+export async function sendStatusChangeEmail(props: {
+  toEmail: string
+  toName: string
+  documentTitle: string
+  documentUrl: string
+  newStatus: string
+  reason?: string | null
+}): Promise<void> {
+  if (!isEmailConfigured()) {
+    console.log(`[email] not configured — would send status-change notice (${props.newStatus}) to ${props.toEmail}`)
+    return
+  }
+  const cfg = STATUS_EMAIL_CONFIG[props.newStatus]
+  if (!cfg) return // no email for this status
+  const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:0;">
+  <div style="max-width:600px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;
+    box-shadow:0 2px 8px rgba(0,0,0,.08);">
+    <div style="background:#1C3557;padding:28px 32px;">
+      <div style="font-size:22px;font-weight:800;color:#fff;">SANPC DMS</div>
+      <div style="font-size:11px;font-weight:600;letter-spacing:.18em;color:#F5A623;margin-top:2px;">POWERING YOUR TOMORROW</div>
+    </div>
+    <div style="padding:32px;">
+      <div style="background:${cfg.bg};border-left:4px solid ${cfg.color};border-radius:6px;padding:14px 18px;margin-bottom:24px;">
+        <div style="font-size:15px;font-weight:700;color:${cfg.color};">${cfg.label}</div>
+        <div style="font-size:13px;color:#374151;margin-top:4px;">${cfg.message}</div>
+      </div>
+      <p style="margin:0 0 8px;font-size:15px;color:#374151;">Dear <strong>${props.toName}</strong>,</p>
+      <p style="margin:0 0 16px;font-size:14px;color:#374151;">
+        Document: <strong>${props.documentTitle}</strong>
+      </p>
+      ${props.reason ? `<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 18px;margin-bottom:20px;">
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#9ca3af;margin-bottom:6px;">Reason</div>
+        <div style="font-size:14px;color:#374151;">${props.reason}</div>
+      </div>` : ''}
+      ${btn(props.documentUrl, 'View Document in SANPC DMS', cfg.color, '#fff')}
+      <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0 16px;" />
+      <p style="margin:0;font-size:12px;color:#9ca3af;">Automated notification from SANPC DMS.</p>
+    </div>
+  </div>
+</body></html>`
+  await sendViaGraph(props.toEmail, props.toName, `[SANPC DMS] ${cfg.label}: ${props.documentTitle}`, html)
+}

@@ -171,10 +171,88 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // ── 3. Approver deadline expired — move FINAL_DRAFT/PENDING_APPROVAL to CHANGES_REQUESTED ──
+  const expiredApprovals = await prisma.documentReview.findMany({
+    where: {
+      status: 'IN_PROGRESS',
+      isApprover: true,
+      deadline: { lte: now },
+      document: { status: { in: ['FINAL_DRAFT', 'PENDING_APPROVAL'] } },
+    },
+    select: {
+      id: true,
+      documentId: true,
+      document: {
+        select: {
+          id: true, title: true,
+          uploadedById: true, originatorId: true,
+          uploadedBy: { select: { id: true, name: true, email: true } },
+          originatorUser: { select: { id: true, name: true, email: true } },
+        },
+      },
+    },
+  })
+
+  const seenApprovalDocs = new Set<string>()
+  let approvalDeadlineExpired = 0
+
+  for (const rev of expiredApprovals) {
+    if (seenApprovalDocs.has(rev.documentId)) continue
+    seenApprovalDocs.add(rev.documentId)
+    const doc = rev.document
+    const documentUrl = `${appUrl}/documents/${rev.documentId}`
+
+    try {
+      await prisma.$transaction([
+        prisma.documentReview.updateMany({
+          where: { documentId: rev.documentId, isApprover: true, status: 'IN_PROGRESS' },
+          data: { status: 'PENDING', startedAt: null, deadline: null },
+        }),
+        prisma.document.update({
+          where: { id: rev.documentId },
+          data: { status: 'CHANGES_REQUESTED' as never },
+        }),
+        prisma.documentActivity.create({
+          data: {
+            documentId: rev.documentId,
+            userId: doc.uploadedById,
+            action: 'STATUS_CHANGED',
+            details: 'FINAL_DRAFT → CHANGES_REQUESTED (approver deadline expired)',
+          },
+        }),
+      ])
+
+      createNotification(doc.uploadedById, 'STATUS_CHANGE', `Approval Deadline Expired: ${doc.title}`,
+        `The approval period for "${doc.title}" has ended. The document has been returned to Changes Requested.`, rev.documentId)
+
+      if (doc.originatorId && doc.originatorId !== doc.uploadedById) {
+        createNotification(doc.originatorId, 'CHANGES_REQUESTED', `Approval Deadline Expired: ${doc.title}`,
+          `The approval window for "${doc.title}" has closed. Please update and resubmit.`, rev.documentId)
+      }
+
+      await sendDeadlineExpiredEmail({
+        toEmail: doc.uploadedBy.email, toName: doc.uploadedBy.name,
+        documentTitle: doc.title, documentUrl, isDC: true,
+      }).catch((e) => console.error('[sla-cron] approver DC deadline email error:', e))
+
+      if (doc.originatorUser && doc.originatorUser.id !== doc.uploadedById) {
+        await sendDeadlineExpiredEmail({
+          toEmail: doc.originatorUser.email, toName: doc.originatorUser.name,
+          documentTitle: doc.title, documentUrl, isDC: false,
+        }).catch((e) => console.error('[sla-cron] approver originator deadline email error:', e))
+      }
+
+      approvalDeadlineExpired++
+    } catch (err) {
+      console.error(`[sla-cron] approver deadline-expire failed for doc ${rev.documentId}:`, err)
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     reminders: remindersSet,
     deadlineExpired,
+    approvalDeadlineExpired,
     checkedAt: now.toISOString(),
   })
 }
