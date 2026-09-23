@@ -32,9 +32,10 @@ interface Props {
   canCreate: boolean
   userId: string
   userRole: string
+  hasFilters: boolean
 }
 
-export default function DocumentsClient({ documents, canCreate, userId, userRole }: Props) {
+export default function DocumentsClient({ documents, canCreate, userId, userRole, hasFilters }: Props) {
   const canDelete = (doc: Document) => userRole === 'ADMIN' || doc.uploadedById === userId
   const [view, setView] = useState<'table' | 'grid'>('table')
   const [page, setPage] = useState(1)
@@ -81,17 +82,32 @@ export default function DocumentsClient({ documents, canCreate, userId, userRole
         <div className="rounded-2xl bg-gray-50 p-5 mb-4">
           <FilePlus className="h-10 w-10 text-gray-300" />
         </div>
-        <p className="text-base font-semibold text-gray-500 mb-1">No documents found</p>
-        <p className="text-sm text-gray-400 mb-5">Try adjusting your search or filter criteria</p>
-        {canCreate && (
-          <Link
-            href="/documents/new"
-            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-all shadow-sm hover:shadow-md active:scale-95"
-            style={{ backgroundColor: '#1C3557' }}
-          >
-            <FilePlus className="h-4 w-4" />
-            Upload First Document
-          </Link>
+        {hasFilters ? (
+          <>
+            <p className="text-base font-semibold text-gray-500 mb-1">No documents match your filters</p>
+            <p className="text-sm text-gray-400 mb-5">Try adjusting or clearing your search and filter criteria</p>
+            <Link
+              href="/documents"
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+            >
+              Clear filters
+            </Link>
+          </>
+        ) : (
+          <>
+            <p className="text-base font-semibold text-gray-500 mb-1">No documents yet</p>
+            <p className="text-sm text-gray-400 mb-5">Get started by uploading your first document</p>
+            {canCreate && (
+              <Link
+                href="/documents/new"
+                className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-all shadow-sm hover:shadow-md active:scale-95"
+                style={{ backgroundColor: '#1C3557' }}
+              >
+                <FilePlus className="h-4 w-4" />
+                Upload First Document
+              </Link>
+            )}
+          </>
         )}
       </div>
     )

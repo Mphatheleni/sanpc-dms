@@ -192,6 +192,7 @@ export default async function DocumentsPage({ searchParams }: PageProps) {
         canCreate={canCreate}
         userId={session.userId}
         userRole={session.role}
+        hasFilters={!!(search || status || category)}
       />
     </div>
   )
