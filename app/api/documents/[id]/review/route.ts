@@ -78,6 +78,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       (r) => !r.isApprover && r.id !== myReview.id && r.status !== 'APPROVED' && r.status !== 'REMOVED'
     )
 
+    const appUrl = process.env.APP_URL || 'http://localhost:3000'
+
     if (pendingReviewers.length === 0) {
       // All reviewers done — return document to manager to clean up before approval
       await prisma.document.update({
@@ -92,7 +94,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         `All reviewers have completed their review of "${document.title}". Ready to advance to approval.`,
         id,
       )
-      const appUrl = process.env.APP_URL || 'http://localhost:3000'
       const reviewCompleteEmails: Promise<void>[] = [
         sendOriginatorNotification({
           toEmail: document.uploadedBy.email,
@@ -119,8 +120,34 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         )
       }
       await Promise.all(reviewCompleteEmails.map((p) => p.catch((e) => console.error('[review] review-complete email error:', e))))
+    } else {
+      // Some reviewers still pending — notify DC/originator that one reviewer has submitted
+      const reviewerCompleteEmails: Promise<void>[] = [
+        sendOriginatorNotification({
+          toEmail: document.uploadedBy.email,
+          toName: document.uploadedBy.name,
+          documentTitle: document.title,
+          documentUrl: `${appUrl}/documents/${id}`,
+          outcome: 'REVIEWER_COMPLETE',
+          reviewerName: session.name,
+          reviewerComments: comments || null,
+        }),
+      ]
+      if (document.originatorUser && document.originatorUser.id !== document.uploadedBy.id) {
+        reviewerCompleteEmails.push(
+          sendOriginatorNotification({
+            toEmail: document.originatorUser.email,
+            toName: document.originatorUser.name,
+            documentTitle: document.title,
+            documentUrl: `${appUrl}/documents/${id}`,
+            outcome: 'REVIEWER_COMPLETE',
+            reviewerName: session.name,
+            reviewerComments: comments || null,
+          })
+        )
+      }
+      await Promise.all(reviewerCompleteEmails.map((p) => p.catch((e) => console.error('[review] reviewer-complete email error:', e))))
     }
-    // else: other reviewers are still reviewing — no document status change yet
   } else {
     // Rejected or changes requested — halt all other active reviewers
     await prisma.$transaction([

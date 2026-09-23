@@ -25,7 +25,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     select: {
       id: true, title: true, status: true,
       uploadedById: true, sharePointUrl: true, reviewDeadlineDays: true,
-      uploadedBy: { select: { name: true, email: true } },
+      uploadedBy: { select: { id: true, name: true, email: true } },
+      originatorUser: { select: { id: true, name: true, email: true } },
       reviews: {
         include: { reviewer: { select: { id: true, name: true, email: true } } },
         orderBy: { order: 'asc' },
@@ -108,6 +109,16 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       documentUrl: `${appUrl}/documents/${id}`,
       stage: 'IN_APPROVAL',
     })
+    // Also notify originator if different from DC
+    if (document.originatorUser && document.originatorUser.id !== document.uploadedBy.id) {
+      await sendDocControllerNotification({
+        toEmail: document.originatorUser.email,
+        toName: document.originatorUser.name,
+        documentTitle: document.title,
+        documentUrl: `${appUrl}/documents/${id}`,
+        stage: 'IN_APPROVAL',
+      })
+    }
   } catch (err) {
     console.error('[resubmit-for-approval] email error:', err)
   }
