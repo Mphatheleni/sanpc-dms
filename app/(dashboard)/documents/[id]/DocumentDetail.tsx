@@ -1255,12 +1255,12 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
       {/* History — kept mounted (RV-3.12) */}
       <div className={activeTab !== 'History' ? 'hidden' : 'space-y-6'}>
         <Card>
-          <h2 className="font-semibold text-gray-800 mb-4">Activity Log</h2>
-          <ActivityLog activities={activities} />
-        </Card>
-        <Card>
           <h2 className="font-semibold text-gray-800 mb-4">Revision History</h2>
           <VersionHistory documentId={doc.id} currentVersion={doc.version} versions={doc.versions} />
+        </Card>
+        <Card>
+          <h2 className="font-semibold text-gray-800 mb-4">Activity Log</h2>
+          <ActivityLog activities={activities} />
         </Card>
       </div>
     </div>
