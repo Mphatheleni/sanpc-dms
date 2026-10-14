@@ -53,8 +53,8 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
   const canAdvance      = isUploader && (document.status === 'REVIEW_COMPLETE' || document.status === 'UPDATING')
   // W-5.5: document is locked while review is running — only replaceable at Request Update / post-rejection stages
   const canReplaceFile  = isUploader && ['FINAL_DRAFT', 'PENDING_APPROVAL', 'REJECTED', 'CHANGES_REQUESTED'].includes(document.status)
-  const canControl   = (session.role === 'ADMIN' || isUploader) && document.status === 'APPROVED'
-  const canExco      = false  // EXCO step removed — all approved documents go directly to Controlled
+  const canControl   = (session.role === 'ADMIN' || isUploader) && document.status === 'APPROVED' && document.documentTypeCode !== 'PO' && !document.isExcoRequired
+  const canExco      = (session.role === 'ADMIN' || isUploader) && document.status === 'APPROVED' && (document.documentTypeCode === 'PO' || document.isExcoRequired)
   const canExcoCtrl  = (session.role === 'ADMIN' || isUploader) && document.status === 'EXCO_PENDING'
   const canSupersede = (session.role === 'ADMIN' || isUploader) && document.status === 'CONTROLLED'
   const canCancel    = (session.role === 'ADMIN' || isUploader) && !['CANCELLED', 'SUPERSEDED'].includes(document.status)
@@ -180,8 +180,21 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
       const fd = new FormData()
       fd.append('file', signFile)
       const res = await fetch(`/api/documents/${document.id}/sign`, { method: 'POST', body: fd })
-      if (res.ok) { onUpdate(await res.json()); setSignFile(null) }
-      else { const d = await res.json().catch(() => ({})); setError(d.error || `Error ${res.status}`) }
+      if (res.ok) {
+        const signedDoc = await res.json()
+        setSignFile(null)
+        // Auto-transition to CONTROLLED after uploading signed page on an APPROVED document
+        if (document.status === 'APPROVED') {
+          const ctrlRes = await fetch(`/api/documents/${document.id}/control`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'CONTROLLED' }),
+          })
+          onUpdate(ctrlRes.ok ? await ctrlRes.json() : signedDoc)
+        } else {
+          onUpdate(signedDoc)
+        }
+      } else { const d = await res.json().catch(() => ({})); setError(d.error || `Error ${res.status}`) }
     } finally { setLoading(null) }
   }
 
@@ -404,17 +417,8 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
               </div>
             )}
             {error && <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{error}</div>}
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={submitForExco}
-                disabled={!!loading}
-                className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-bold text-white disabled:opacity-60 hover:opacity-90"
-                style={{ backgroundColor: '#7C3AED' }}
-              >
-                <Landmark className="h-4 w-4" />
-                {loading === 'SUBMIT_EXCO' ? 'Submitting…' : 'Submit for EXCO Approval'}
-              </button>
-              {canCancel && (
+            {canCancel && (
+              <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => controlDocument('CANCELLED')}
                   disabled={!!loading}
@@ -423,8 +427,8 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
                   <Ban className="h-4 w-4 text-red-500" />
                   {loading === 'CANCELLED' ? 'Cancelling…' : 'Cancel Document'}
                 </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
         {canSign && <SignedPageUpload document={document} signFile={signFile} setSignFile={setSignFile} signRef={signRef} loading={loading} onUpload={uploadSignedPage} />}
