@@ -60,19 +60,25 @@ interface MandatoryReviewer {
  * - Removes the previously auto-added user when the selection changes.
  * - Deduplicates — if already present they appear once.
  */
+// Stable key for a user — use DB id when available, fall back to email for AD-only users
+function userKey(u: PickableUser): string {
+  return u.id || u.email
+}
+
 function autoMerge(
   base: WorkflowMember[],
   newUser: PickableUser | null,
-  prevAutoId: string | null,
+  prevAutoKey: string | null,
 ): WorkflowMember[] {
-  // Remove previous auto-added entry if it changed
-  const filtered = prevAutoId && prevAutoId !== newUser?.id
-    ? base.filter((m) => m.userId !== prevAutoId)
+  const newKey = newUser ? userKey(newUser) : null
+  // Remove previous auto-added entry if the selection changed
+  const filtered = prevAutoKey && prevAutoKey !== newKey
+    ? base.filter((m) => m.userId !== prevAutoKey)
     : [...base]
 
-  const existingIds = new Set(filtered.map((m) => m.userId))
-  if (newUser && !existingIds.has(newUser.id)) {
-    filtered.push({ userId: newUser.id, name: newUser.name, email: newUser.email, order: filtered.length + 1 })
+  const existingKeys = new Set(filtered.map((m) => m.userId))
+  if (newUser && newKey && !existingKeys.has(newKey)) {
+    filtered.push({ userId: newKey, name: newUser.name, email: newUser.email, order: filtered.length + 1 })
   }
 
   return filtered.map((m, i) => ({ ...m, order: i + 1 }))
@@ -173,7 +179,7 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
             if (!newMandatoryIds.has(m.userId)) withMandatory.push(m)
           }
           const merged = autoMerge(withMandatory, originatorUser, autoAddedReviewerId.current)
-          autoAddedReviewerId.current = originatorUser?.id ?? null
+          autoAddedReviewerId.current = originatorUser ? userKey(originatorUser) : null
           return merged.map((r, i) => ({ ...r, order: i + 1 }))
         })
       })
@@ -186,21 +192,21 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
   useEffect(() => {
     setReviewers((prev) => {
       const merged = autoMerge(prev, originatorUser, autoAddedReviewerId.current)
-      autoAddedReviewerId.current = originatorUser?.id ?? null
+      autoAddedReviewerId.current = originatorUser ? userKey(originatorUser) : null
       return merged
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [originatorUser?.id])
+  }, [originatorUser?.id, originatorUser?.email])
 
   // DLT-12: Approved By → Approvers (replace previous auto-added entry on change)
   useEffect(() => {
     setApprovers((prev) => {
       const merged = autoMerge(prev, authorizerUser, autoAddedApproverId.current)
-      autoAddedApproverId.current = authorizerUser?.id ?? null
+      autoAddedApproverId.current = authorizerUser ? userKey(authorizerUser) : null
       return merged
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authorizerUser?.id])
+  }, [authorizerUser?.id, authorizerUser?.email])
 
   function handleDragReorder(setList: React.Dispatch<React.SetStateAction<WorkflowMember[]>>) {
     const dragId = dragItemRef.current
@@ -319,16 +325,21 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
         body: JSON.stringify({
           ...uploadResult, title, description, category, tags,
           reviewDeadlineDays: reviewDeadlineDays ? Number(reviewDeadlineDays) : null,
-          reviewers: reviewers.map((r) => ({ userId: r.userId, order: r.order })),
-          approvers: approvers.map((a) => ({ userId: a.userId, order: a.order })),
+          reviewers: reviewers.map((r) => ({ userId: r.userId, email: r.email, name: r.name, order: r.order })),
+          approvers: approvers.map((a) => ({ userId: a.userId, email: a.email, name: a.name, order: a.order })),
           metadata: metadata.filter((m) => m.key && m.value),
           documentNumber: documentNumber || undefined, documentTypeCode: docTypeCode || undefined,
           revision: revision || '00',
           originator: originatorUser?.name || originator || undefined,
           authorisedBy: authorizerUser?.name || authorisedBy || undefined,
           purpose: purpose || undefined,
+          // For DB users pass the id; for AD-only users pass email+name so the server can upsert them
           originatorId: originatorUser?.id || undefined,
+          originatorEmail: (!originatorUser?.id && originatorUser?.email) ? originatorUser.email : undefined,
+          originatorName: (!originatorUser?.id && originatorUser?.email) ? originatorUser.name : undefined,
           authorizerId: authorizerUser?.id || undefined,
+          authorizerEmail: (!authorizerUser?.id && authorizerUser?.email) ? authorizerUser.email : undefined,
+          authorizerName: (!authorizerUser?.id && authorizerUser?.email) ? authorizerUser.name : undefined,
         }),
       })
       if (res.ok) {
@@ -361,12 +372,21 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
         <p className="text-xs text-gray-400 mb-2">{sublabel}</p>
         <div className="mb-2">
           <UserPicker
-            users={available}
+            azureSearch
             value={pickerValue}
             onChange={(u) => {
-              if (u) { addMember(u.id, members, setList, pool); setPickerValue(null) }
+              if (!u) return
+              // Dedup by email regardless of whether they're in DB yet
+              if (members.find((m) => m.email === u.email)) return
+              // Use email as local key for AD-only users (no DB id yet)
+              setList((prev) => [...prev, {
+                userId: u.id || u.email,
+                name: u.name,
+                email: u.email,
+                order: prev.length + 1,
+              }])
+              setPickerValue(null)
             }}
-            placeholder={`Search ${label.toLowerCase()}…`}
           />
         </div>
         {members.length === 0 ? (
@@ -548,12 +568,12 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
 
           {/* People */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <UserPicker key="originator-picker" users={users} value={originatorUser}
+            <UserPicker key="originator-picker" azureSearch value={originatorUser}
               onChange={(u) => { setOriginatorUser(u); if (u) setOriginator(u.name) }}
-              label="Originator" placeholder="Search by name or email…" />
-            <UserPicker key="authorizer-picker" users={users} value={authorizerUser}
+              label="Originator" />
+            <UserPicker key="authorizer-picker" azureSearch value={authorizerUser}
               onChange={(u) => { setAuthorizerUser(u); if (u) setAuthorisedBy(u.name) }}
-              label="Approved By" placeholder="Search by name or email…" />
+              label="Approved By" />
           </div>
 
           {/* Tags — FR-2.1/2.2 */}

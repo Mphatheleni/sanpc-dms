@@ -46,20 +46,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   if (!document) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const canAct = session.role === 'ADMIN' || document.uploadedById === session.userId
+  const canAct = session.role === 'ADMIN' || session.role === 'DOCUMENT_MANAGER' || document.uploadedById === session.userId
   if (!canAct) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-
-  // For Policy (PO) documents that require EXCO, APPROVED → EXCO_PENDING, not CONTROLLED directly
-  if (
-    action === 'CONTROLLED' &&
-    document.status === 'APPROVED' &&
-    (document.documentTypeCode === 'PO' || document.isExcoRequired)
-  ) {
-    return NextResponse.json(
-      { error: 'Policy documents require Board/EXCO resolution. Use the EXCO workflow to mark as Controlled.' },
-      { status: 400 },
-    )
-  }
 
   // Validate allowed transitions
   const allowedFrom: Record<string, string[]> = {
@@ -84,11 +72,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     CHANGES_REQUESTED: 'STATUS_CHANGED',
   }
 
-  // On CONTROLLED: set controlledAt + 40-year retention
+  // On CONTROLLED: set controlledAt + 40-year retention + recalculate nextReviewDate from publication date
+  const reviewYears: Record<string, number> = { ST: 1, RM: 2, TOR: 2, GL: 3, BC: 3 }
   const now = new Date()
   const controlledAt = action === 'CONTROLLED' ? now.toISOString() : undefined
   const retentionDate = action === 'CONTROLLED'
     ? (() => { const d = new Date(now); d.setFullYear(d.getFullYear() + 40); return d.toISOString() })()
+    : undefined
+  const nextReviewDate = action === 'CONTROLLED'
+    ? (() => {
+        const yearsUntilReview = document.documentTypeCode ? (reviewYears[document.documentTypeCode] ?? 6) : 6
+        const d = new Date(now)
+        d.setFullYear(d.getFullYear() + yearsUntilReview)
+        return d.toISOString().split('T')[0]
+      })()
     : undefined
 
   // W3: when marking CONTROLLED, find the currently-controlled revision of the same
@@ -107,6 +104,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         status: action as 'CONTROLLED' | 'SUPERSEDED' | 'CANCELLED',
         ...(controlledAt && { controlledAt }),
         ...(retentionDate && { retentionDate }),
+        ...(nextReviewDate && { nextReviewDate }),
       },
     }),
     prisma.documentActivity.create({

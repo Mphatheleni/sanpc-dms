@@ -3,7 +3,6 @@ import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { calcDeadline } from '@/lib/sla'
 import { sendBulkReviewNotificationsAsync, sendApproverHeadsUpEmail, sendDocControllerNotification } from '@/lib/email'
-import { signReviewToken } from '@/lib/reviewToken'
 import { createNotification } from '@/lib/notify'
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -106,27 +105,16 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   // Email all activated reviewers/approvers — awaited so Cloud Run doesn't cut it short
   const appUrl = process.env.APP_URL || 'http://localhost:3000'
   try {
-    const notifications = await Promise.all(
-      groupToActivate.map(async (r) => {
-        const reviewToken = await signReviewToken({
-          documentId: id,
-          reviewId: r.id,
-          reviewerId: r.reviewer.id,
-          isApprover: !activateReviewers,
-        })
-        return {
-          toEmail: r.reviewer.email,
-          toName: r.reviewer.name,
-          documentTitle: document.title,
-          documentUrl: `${appUrl}/documents/${id}`,
-          reviewUrl: `${appUrl}/review/${reviewToken}`,
-          sharePointUrl: document.sharePointUrl,
-          deadline: deadline?.toISOString() ?? null,
-          isApprover: !activateReviewers,
-          uploaderName: session.name,
-        }
-      })
-    )
+    const notifications = groupToActivate.map((r) => ({
+      toEmail: r.reviewer.email,
+      toName: r.reviewer.name,
+      documentTitle: document.title,
+      documentUrl: `${appUrl}/documents/${id}`,
+      sharePointUrl: document.sharePointUrl,
+      deadline: deadline?.toISOString() ?? null,
+      isApprover: !activateReviewers,
+      uploaderName: session.name,
+    }))
     await sendBulkReviewNotificationsAsync(notifications)
   } catch (err) {
     console.error('[submit] reviewer email error:', err)

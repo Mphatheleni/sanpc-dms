@@ -53,8 +53,8 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
   const canAdvance      = isUploader && (document.status === 'REVIEW_COMPLETE' || document.status === 'UPDATING')
   // W-5.5: document is locked while review is running — only replaceable at Request Update / post-rejection stages
   const canReplaceFile  = isUploader && ['FINAL_DRAFT', 'PENDING_APPROVAL', 'REJECTED', 'CHANGES_REQUESTED'].includes(document.status)
-  const canControl   = (session.role === 'ADMIN' || isUploader) && document.status === 'APPROVED' && document.documentTypeCode !== 'PO' && !document.isExcoRequired
-  const canExco      = (session.role === 'ADMIN' || isUploader) && document.status === 'APPROVED' && (document.documentTypeCode === 'PO' || document.isExcoRequired)
+  const canControl   = (session.role === 'ADMIN' || isUploader) && document.status === 'APPROVED'
+  const canExco      = false  // EXCO step removed — all approved documents go directly to Controlled
   const canExcoCtrl  = (session.role === 'ADMIN' || isUploader) && document.status === 'EXCO_PENDING'
   const canSupersede = (session.role === 'ADMIN' || isUploader) && document.status === 'CONTROLLED'
   const canCancel    = (session.role === 'ADMIN' || isUploader) && !['CANCELLED', 'SUPERSEDED'].includes(document.status)

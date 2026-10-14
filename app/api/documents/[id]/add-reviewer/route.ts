@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { calcDeadline } from '@/lib/sla'
-import { signReviewToken } from '@/lib/reviewToken'
 import { sendReviewNotification } from '@/lib/email'
 
 export async function POST(
@@ -98,12 +97,6 @@ export async function POST(
 
   // Only email if the document is already active — otherwise they'll be notified on submit
   if (isActiveAdd) {
-    const reviewToken = await signReviewToken({
-      documentId: id,
-      reviewId: newReview.id,
-      reviewerId: resolvedId,
-      isApprover: !!isApprover,
-    })
     const appUrl = process.env.APP_URL || 'http://localhost:3000'
     try {
       await sendReviewNotification({
@@ -111,7 +104,6 @@ export async function POST(
         toName: newReviewer.name,
         documentTitle: document.title,
         documentUrl: `${appUrl}/documents/${id}`,
-        reviewUrl: `${appUrl}/review/${reviewToken}`,
         sharePointUrl: document.sharePointUrl,
         deadline: deadline?.toISOString() ?? null,
         isApprover: !!isApprover,

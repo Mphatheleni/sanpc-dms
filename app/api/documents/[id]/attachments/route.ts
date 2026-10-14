@@ -45,7 +45,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const buffer = Buffer.from(await file.arrayBuffer())
   const ext = path.extname(file.name)
-  const uniqueName = `attach-${randomUUID()}${ext}`
+  const uuid = randomUUID()
+  const uniqueName = `attach-${uuid}${ext}`
+  // SharePoint filename: human-readable with short unique prefix to avoid collisions
+  const spFileName = `attach-${uuid.slice(0, 8)}-${file.name.replace(/["*:<>?/\\|#%]/g, '_')}`
   const mimeType = file.type || 'application/octet-stream'
 
   let storedName = uniqueName
@@ -53,7 +56,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   if (isSharePointConfigured()) {
     try {
-      const result = await uploadToSharePoint(uniqueName, buffer, mimeType)
+      const result = await uploadToSharePoint(spFileName, buffer, mimeType)
       if (result.itemId) { storedName = result.itemId; uploaded = true }
     } catch (err) { console.error('[attachments] SharePoint error:', err) }
   }

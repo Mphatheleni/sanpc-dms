@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { calcDeadline } from '@/lib/sla'
-import { signReviewToken } from '@/lib/reviewToken'
 import { sendReviewNotification, sendReviewerRemovedEmail } from '@/lib/email'
 
 export async function POST(
@@ -110,9 +109,6 @@ export async function POST(
       data: { reviewerId: resolvedId, status: 'IN_PROGRESS', startedAt: now, deadline, reviewedAt: null, comments: null },
     })
 
-    const reviewToken = await signReviewToken({
-      documentId: id, reviewId, reviewerId: resolvedId, isApprover: existingReview.isApprover,
-    })
     const appUrl = process.env.APP_URL || 'http://localhost:3000'
     try {
       await Promise.all([
@@ -127,7 +123,6 @@ export async function POST(
           toName: newReviewer.name,
           documentTitle: document.title,
           documentUrl: `${appUrl}/documents/${id}`,
-          reviewUrl: `${appUrl}/review/${reviewToken}`,
           sharePointUrl: document.sharePointUrl,
           deadline: deadline?.toISOString() ?? null,
           isApprover: existingReview.isApprover,

@@ -10,6 +10,7 @@ import {
   FilePlus,
   Users,
   BarChart2,
+  HelpCircle,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react'
@@ -21,6 +22,7 @@ const navItems = [
   { href: '/documents/new',  label: 'New Document', icon: FilePlus,        roles: ['ADMIN', 'DOCUMENT_MANAGER'] },
   { href: '/reports',        label: 'Reports',      icon: BarChart2,       roles: ['ADMIN', 'DOCUMENT_MANAGER'] },
   { href: '/admin',          label: 'Users',        icon: Users,           roles: ['ADMIN'] },
+  { href: '/help',           label: 'Help & Training', icon: HelpCircle,   roles: ['ADMIN', 'DOCUMENT_MANAGER', 'REVIEWER', 'APPROVER', 'ORIGINATOR'] },
 ]
 
 const roleLabels: Record<string, string> = {

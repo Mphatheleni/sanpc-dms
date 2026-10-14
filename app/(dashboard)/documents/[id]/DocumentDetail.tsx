@@ -28,6 +28,24 @@ function formatDate(date: string) {
   })
 }
 
+/** Opens the document preview: for SharePoint Office files the API returns { previewUrl }
+ *  which must be followed; for PDFs/images the API URL itself works as-is. */
+function openDocPreview(docId: string) {
+  // Open a blank tab synchronously (avoids popup-blocker) then navigate it after the fetch
+  const newTab = window.open('about:blank')
+  if (!newTab) { window.open(`/api/documents/${docId}/preview`, '_blank'); return }
+  fetch(`/api/documents/${docId}/preview`)
+    .then(async (res) => {
+      const ct = res.headers.get('content-type') || ''
+      if (ct.includes('application/json')) {
+        const json = await res.json().catch(() => ({}))
+        if (json.previewUrl) { newTab.location.href = json.previewUrl; return }
+      }
+      newTab.location.href = `/api/documents/${docId}/preview`
+    })
+    .catch(() => { newTab.location.href = `/api/documents/${docId}/preview` })
+}
+
 const reviewStatusIcon: Record<string, React.ReactNode> = {
   PENDING:           <Clock className="h-4 w-4 text-gray-400" />,
   IN_PROGRESS:       <Clock className="h-4 w-4 text-sanpc-navy" />,
@@ -729,14 +747,13 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
                 Main
               </span>
               <div className="flex items-center gap-1.5 flex-shrink-0">
-                <a
-                  href={`/api/documents/${doc.id}/preview`}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  type="button"
+                  onClick={() => openDocPreview(doc.id)}
                   className="rounded-md px-2.5 py-1 text-xs font-medium text-sanpc-navy border border-sanpc-navy/30 hover:bg-sanpc-navy-light transition-colors"
                 >
                   View
-                </a>
+                </button>
                 <a
                   href={`/api/documents/${doc.id}/file`}
                   download={doc.fileName}
@@ -829,7 +846,7 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
                       <dd className="text-gray-800">{doc.authorisedBy}</dd>
                     </div>
                   )}
-                  {doc.nextReviewDate && (
+                  {doc.nextReviewDate && (doc.status === 'CONTROLLED' || doc.status === 'SUPERSEDED') && (
                     <div>
                       <dt className="text-xs text-gray-500">Next Review Due</dt>
                       <dd className="text-gray-800 font-medium">{new Date(doc.nextReviewDate).toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' })}</dd>

@@ -55,6 +55,7 @@ export default function UserPicker({
   const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null)
   const [azureResults, setAzureResults] = useState<PickableUser[]>([])
   const [loading, setLoading] = useState(false)
+  const [searchError, setSearchError] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
   // Local filtering (non-azure mode)
@@ -68,14 +69,21 @@ export default function UserPicker({
   // Azure AD search — debounced 300ms
   useEffect(() => {
     if (!azureSearch) return
-    if (query.trim().length < 2) { setAzureResults([]); return }
+    if (query.trim().length < 2) { setAzureResults([]); setSearchError(false); return }
     const timer = setTimeout(async () => {
       setLoading(true)
+      setSearchError(false)
       try {
         const res = await fetch(`/api/users/search?q=${encodeURIComponent(query.trim())}`)
         const data = await res.json()
-        setAzureResults(Array.isArray(data) ? data : [])
+        if (!res.ok) {
+          setSearchError(true)
+          setAzureResults([])
+        } else {
+          setAzureResults(Array.isArray(data) ? data : [])
+        }
       } catch {
+        setSearchError(true)
         setAzureResults([])
       } finally {
         setLoading(false)
@@ -217,6 +225,11 @@ export default function UserPicker({
             <div className="flex items-center gap-2 px-3 py-3 text-sm text-gray-400">
               <Loader2 className="h-4 w-4 animate-spin" />
               Searching…
+            </div>
+          ) : searchError ? (
+            <div className="flex items-center gap-2 px-3 py-3 text-sm text-amber-600">
+              <User className="h-4 w-4" />
+              Organisation search unavailable — check server logs
             </div>
           ) : displayList.length === 0 ? (
             <div className="flex items-center gap-2 px-3 py-3 text-sm text-gray-400">

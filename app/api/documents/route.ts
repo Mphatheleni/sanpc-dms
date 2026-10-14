@@ -83,7 +83,8 @@ export async function POST(request: NextRequest) {
     sharePointUrl, sharePointItemId, reviewDeadlineDays,
     reviewers, approvers, metadata,
     documentNumber, documentTypeCode, revision, originator, authorisedBy, purpose,
-    originatorId, authorizerId,
+    originatorId, originatorEmail, originatorName,
+    authorizerId, authorizerEmail, authorizerName,
   } = body
 
   // Calculate next review date from document type code per CSS/PR/CSF/005
@@ -100,20 +101,58 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Missing required fields: ${missing.join(', ')}` }, { status: 400 })
   }
 
+  // Resolve a member to a DB user id — auto-provisions AD-only users on first use
+  async function resolveId(m: { userId?: string; email?: string; name?: string }): Promise<string> {
+    // userId is a real DB id when it doesn't look like an email
+    if (m.userId && !m.userId.includes('@')) return m.userId
+    const email = (m.email || m.userId || '').toLowerCase().trim()
+    if (!email) throw new Error('Reviewer/approver has no userId or email')
+    const user = await prisma.user.upsert({
+      where: { email },
+      update: {},
+      create: { name: m.name ?? email, email, role: 'REVIEWER', password: '' },
+    })
+    return user.id
+  }
+
+  // Auto-provision AD-only originator/authorizer so the document has a linked user record
+  let resolvedOriginatorId: string | null = originatorId ?? null
+  if (!resolvedOriginatorId && originatorEmail) {
+    const u = await prisma.user.upsert({
+      where: { email: originatorEmail.toLowerCase().trim() },
+      update: {},
+      create: { name: originatorName ?? originatorEmail, email: originatorEmail.toLowerCase().trim(), role: 'ORIGINATOR', password: '' },
+    })
+    resolvedOriginatorId = u.id
+  }
+
+  let resolvedAuthorizerId: string | null = authorizerId ?? null
+  if (!resolvedAuthorizerId && authorizerEmail) {
+    const u = await prisma.user.upsert({
+      where: { email: authorizerEmail.toLowerCase().trim() },
+      update: {},
+      create: { name: authorizerName ?? authorizerEmail, email: authorizerEmail.toLowerCase().trim(), role: 'APPROVER', password: '' },
+    })
+    resolvedAuthorizerId = u.id
+  }
+
   // Build all review records: reviewers first (isApprover=false), then approvers (isApprover=true)
+  const reviewerList: { userId: string; email?: string; name?: string; order: number }[] = reviewers ?? []
+  const approverList: { userId: string; email?: string; name?: string; order: number }[] = approvers ?? []
+
   const reviewRecords = [
-    ...(reviewers ?? []).map((r: { userId: string; order: number }) => ({
-      reviewerId: r.userId,
+    ...await Promise.all(reviewerList.map(async (r) => ({
+      reviewerId: await resolveId(r),
       order: r.order,
       isApprover: false,
       status: 'PENDING' as const,
-    })),
-    ...(approvers ?? []).map((a: { userId: string; order: number }) => ({
-      reviewerId: a.userId,
+    }))),
+    ...await Promise.all(approverList.map(async (a) => ({
+      reviewerId: await resolveId(a),
       order: a.order,
       isApprover: true,
       status: 'PENDING' as const,
-    })),
+    }))),
   ]
 
   const document = await prisma.document.create({
@@ -135,8 +174,8 @@ export async function POST(request: NextRequest) {
       originator: originator ?? null,
       authorisedBy: authorisedBy ?? null,
       purpose: purpose ?? null,
-      originatorId: originatorId ?? null,
-      authorizerId: authorizerId ?? null,
+      originatorId: resolvedOriginatorId,
+      authorizerId: resolvedAuthorizerId,
       status: 'REGISTERED' as never,
       nextReviewDate: nextReviewDateStr,
       uploadedById: session.userId,

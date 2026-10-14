@@ -123,19 +123,15 @@ function buildHtml({
       </div>
       <p style="margin:0 0 12px;font-size:14px;color:#374151;font-weight:600;">How to complete your ${role}:</p>
       <ol style="margin:0 0 20px;padding-left:20px;font-size:14px;color:#374151;line-height:2;">
-        ${sharePointUrl ? `<li>Click <strong>"Open &amp; Annotate in Office 365"</strong> to read, comment, and track changes directly in Word or Excel Online.</li>` : ''}
-        <li>Once done annotating, click <strong>"${actionLabel.replace(/✅ /, '')}"</strong> below to record your formal decision — <em>no DMS login required</em>.</li>
+        <li>Click the button below and sign in with your Microsoft account.</li>
+        <li>Preview the document and use the Review panel to record your formal decision.</li>
       </ol>
       <div style="margin-bottom:16px;">
-        ${sharePointUrl ? btn(sharePointUrl, '📄 Open &amp; Annotate in Office 365', '#0078D4', '#fff') : ''}
         ${btn(primaryUrl, actionLabel, '#1C3557', '#fff')}
       </div>
-      <p style="margin:8px 0 0;font-size:12px;color:#9ca3af;">
-        Or <a href="${documentUrl}" style="color:#1C3557;">view the document in SANPC DMS</a> (requires login).
-      </p>
       <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0 16px;" />
       <p style="margin:0;font-size:12px;color:#9ca3af;">
-        This is a secure, personalised link. Do not forward this email.
+        If you cannot access the document, contact the Document Controller.
         Automated notification from SANPC DMS.
       </p>
     </div>
@@ -349,17 +345,33 @@ export async function sendDocControllerNotification(props: {
     console.log(`[email] not configured — would send doc controller notification to ${props.toEmail} stage=${props.stage}`)
     return
   }
-  const stageConfig: Record<DocControllerStage, { label: string; color: string; bg: string; message: string }> = {
-    SUBMITTED:   { label: 'Document Submitted for Review',  color: '#1C3557', bg: '#E8EDF4', message: 'The document has been submitted and the review workflow has started.' },
-    IN_APPROVAL: { label: 'Document Sent for Approval',     color: '#7C3AED', bg: '#F5F3FF', message: 'All reviewers have completed their review. The Final Draft has been sent for formal approval.' },
-    APPROVED:    { label: 'Document Approved',              color: '#16A34A', bg: '#F0FDF4', message: 'The document has been formally approved by all approvers.' },
-    REJECTED:    { label: 'Document Rejected',              color: '#DC2626', bg: '#FEF2F2', message: 'The document has been rejected. Please review the feedback and coordinate with the Originator.' },
+  const stageConfig: Record<DocControllerStage, { label: string; color: string; bg: string; body: string }> = {
+    SUBMITTED:   {
+      label: 'Review Workflow Started',
+      color: '#1C3557', bg: '#E8EDF4',
+      body: 'The document has been submitted for review and the assigned reviewers have been notified. You will receive another notification once all reviews are complete.',
+    },
+    IN_APPROVAL: {
+      label: 'Sent for Approval',
+      color: '#7C3AED', bg: '#F5F3FF',
+      body: 'All reviewers have completed their review. The document has been sent to the approvers for formal sign-off. You will be notified when a final approval decision is made.',
+    },
+    APPROVED:    {
+      label: 'Document Approved',
+      color: '#16A34A', bg: '#F0FDF4',
+      body: 'All approvers have formally approved this document. You may now publish it by marking it as Controlled in the SANPC DMS.',
+    },
+    REJECTED:    {
+      label: 'Document Rejected',
+      color: '#DC2626', bg: '#FEF2F2',
+      body: 'This document has been rejected. Please open it in the SANPC DMS to review the feedback, coordinate with the Originator to address the comments, and resubmit when ready.',
+    },
   }
   const cfg = stageConfig[props.stage]
   const subjectMap: Record<DocControllerStage, string> = {
     SUBMITTED:   `[SANPC DMS] Workflow Started: ${props.documentTitle}`,
     IN_APPROVAL: `[SANPC DMS] Sent for Approval: ${props.documentTitle}`,
-    APPROVED:    `[SANPC DMS] Approved: ${props.documentTitle}`,
+    APPROVED:    `[SANPC DMS] Approved — Action Required: ${props.documentTitle}`,
     REJECTED:    `[SANPC DMS] Rejected: ${props.documentTitle}`,
   }
   const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:0;">
@@ -372,13 +384,14 @@ export async function sendDocControllerNotification(props: {
     <div style="padding:32px;">
       <div style="background:${cfg.bg};border-left:4px solid ${cfg.color};border-radius:6px;padding:14px 18px;margin-bottom:24px;">
         <div style="font-size:15px;font-weight:700;color:${cfg.color};">${cfg.label}</div>
-        <div style="font-size:13px;color:#374151;margin-top:4px;">${cfg.message}</div>
       </div>
       <p style="margin:0 0 8px;font-size:15px;color:#374151;">Dear <strong>${props.toName}</strong>,</p>
-      <p style="margin:0 0 16px;font-size:14px;color:#374151;">
-        Document: <strong>${props.documentTitle}</strong>
-      </p>
-      ${btn(props.documentUrl, 'View Document in SANPC DMS', cfg.color, '#fff')}
+      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 18px;margin-bottom:16px;">
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#9ca3af;margin-bottom:4px;">Document</div>
+        <div style="font-size:16px;font-weight:700;color:#1C3557;">${props.documentTitle}</div>
+      </div>
+      <p style="margin:0 0 20px;font-size:14px;color:#374151;line-height:1.6;">${cfg.body}</p>
+      ${btn(props.documentUrl, 'Open in SANPC DMS', cfg.color, '#fff')}
       <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0 16px;" />
       <p style="margin:0;font-size:12px;color:#9ca3af;">Automated notification from SANPC DMS.</p>
     </div>
@@ -464,8 +477,7 @@ export async function sendDocumentUpdatedEmail(props: {
       <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;margin-bottom:20px;">
         <div style="font-size:17px;font-weight:700;color:#1C3557;">${props.documentTitle}</div>
       </div>
-      ${props.sharePointUrl ? btn(props.sharePointUrl, '📄 Open Updated Document in Office 365', '#0078D4', '#fff') : ''}
-      ${btn(props.documentUrl, 'View in SANPC DMS', '#1C3557', '#fff')}
+      ${btn(props.documentUrl, 'View Updated Document in SANPC DMS', '#1C3557', '#fff')}
       <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0 16px;" />
       <p style="margin:0;font-size:12px;color:#9ca3af;">Automated notification from SANPC DMS.</p>
     </div>

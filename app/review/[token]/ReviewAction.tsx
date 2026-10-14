@@ -109,40 +109,14 @@ export default function ReviewAction({
   return (
     <div className="px-6 py-5 space-y-4">
 
-      {/* Step 1: Open in SharePoint */}
-      {sharePointUrl && (
-        <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
-          <div className="flex items-start gap-3">
-            <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-white text-xs font-bold">1</div>
-            <div className="flex-1">
-              <p className="font-semibold text-gray-800 text-sm">Open &amp; annotate in Office Online</p>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Read the document. Use <strong>Word comments</strong> or <strong>Track Changes</strong> to leave
-                inline feedback.
-              </p>
-              <a
-                href={sharePointUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-3 inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white"
-                style={{ backgroundColor: '#0078D4' }}
-              >
-                <ExternalLink className="h-4 w-4" />
-                Open &amp; Annotate in Office Online
-              </a>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Step 2: Submit decision */}
+      {/* Submit decision */}
       <div className="rounded-xl border border-gray-200 p-4 space-y-4">
         <div className="flex items-start gap-3">
           <div
             className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-white text-xs font-bold"
             style={{ backgroundColor: '#1C3557' }}
           >
-            {sharePointUrl ? '2' : '1'}
+            1
           </div>
           <div>
             <p className="font-semibold text-gray-800 text-sm">Submit your formal decision</p>
@@ -214,7 +188,7 @@ export default function ReviewAction({
                 className="flex-1"
               >
                 {loading === 'REJECTED' ? (
-                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Rejecting…</>
+                  <><Loader2 className="mr-2 h-Hey bruh, I think I'm gonna make it, let's say, 10:00. 4 w-4 animate-spin" />Rejecting…</>
                 ) : (
                   <><XCircle className="mr-2 h-4 w-4" />Reject</>
                 )}

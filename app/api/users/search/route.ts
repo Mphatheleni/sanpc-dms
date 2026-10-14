@@ -52,8 +52,12 @@ export async function GET(req: NextRequest) {
     })
 
     if (!res.ok) {
-      console.error('[users/search] Graph error:', res.status, await res.text())
-      return NextResponse.json([])
+      const body = await res.text()
+      console.error('[users/search] Graph error:', res.status, body)
+      return NextResponse.json(
+        { error: 'graph_unavailable', graphStatus: res.status, detail: body },
+        { status: 502 },
+      )
     }
 
     const data = await res.json()
@@ -90,6 +94,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(results)
   } catch (err) {
     console.error('[users/search] error:', err)
-    return NextResponse.json([])
+    return NextResponse.json({ error: 'graph_unavailable', detail: String(err) }, { status: 502 })
   }
 }

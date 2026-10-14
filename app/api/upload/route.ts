@@ -25,7 +25,10 @@ export async function POST(request: NextRequest) {
 
   const buffer = Buffer.from(await file.arrayBuffer())
   const ext = path.extname(file.name)
-  const uniqueName = `${randomUUID()}${ext}`
+  const uuid = randomUUID()
+  const uniqueName = `${uuid}${ext}`
+  // SharePoint filename: human-readable with short unique prefix to avoid collisions
+  const spFileName = `${uuid.slice(0, 8)}-${file.name.replace(/["*:<>?/\\|#%]/g, '_')}`
   const mimeType = file.type || 'application/octet-stream'
 
   const errors: string[] = []
@@ -33,7 +36,7 @@ export async function POST(request: NextRequest) {
   // 1. SharePoint (if configured)
   if (isSharePointConfigured()) {
     try {
-      const result = await uploadToSharePoint(uniqueName, buffer, mimeType)
+      const result = await uploadToSharePoint(spFileName, buffer, mimeType)
       if (result.itemId && result.webUrl) {
         console.log(`[upload] SharePoint success: ${result.webUrl}`)
         return NextResponse.json({
