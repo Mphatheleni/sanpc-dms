@@ -188,7 +188,7 @@ export default function ReviewAction({
                 className="flex-1"
               >
                 {loading === 'REJECTED' ? (
-                  <><Loader2 className="mr-2 h-Hey bruh, I think I'm gonna make it, let's say, 10:00. 4 w-4 animate-spin" />Rejecting…</>
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Rejecting…</>
                 ) : (
                   <><XCircle className="mr-2 h-4 w-4" />Reject</>
                 )}

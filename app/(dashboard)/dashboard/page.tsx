@@ -66,6 +66,15 @@ export default async function DashboardPage() {
     }) as typeof myDocs
   }
 
+  if (session.role === 'REVIEWER' || session.role === 'APPROVER') {
+    myDocs = await prisma.document.findMany({
+      where: { reviews: { some: { reviewerId: session.userId } } },
+      orderBy: { updatedAt: 'desc' },
+      take: 8,
+      select: { id: true, title: true, status: true, updatedAt: true, category: true },
+    }) as typeof myDocs
+  }
+
   // Document controllers need to act on docs awaiting submission, re-upload, or re-approval
   if (session.role === 'DOCUMENT_MANAGER' || session.role === 'ADMIN') {
     const dmPending = await prisma.document.findMany({
@@ -122,6 +131,7 @@ export default async function DashboardPage() {
   const scopeWhere =
     (session.role === 'ADMIN' || session.role === 'DOCUMENT_MANAGER') ? {} :
     session.role === 'ORIGINATOR' ? { originatorId: session.userId } :
+    (session.role === 'REVIEWER' || session.role === 'APPROVER') ? { reviews: { some: { reviewerId: session.userId } } } :
     { uploadedById: session.userId }
   const totalDocs = await prisma.document.count({ where: scopeWhere })
   const approvedDocs = await prisma.document.count({ where: { ...scopeWhere, status: 'APPROVED' } })
@@ -149,7 +159,11 @@ export default async function DashboardPage() {
     'Strategy & Planning', 'Risk Matrix', 'Standard', 'Guidelines',
     'Training Material', 'Form / Template',
   ]
-  const categoryScope = (session.role === 'ADMIN' || session.role === 'DOCUMENT_MANAGER') ? {} : { uploadedById: session.userId }
+  const categoryScope =
+    (session.role === 'ADMIN' || session.role === 'DOCUMENT_MANAGER') ? {} :
+    session.role === 'ORIGINATOR' ? { originatorId: session.userId } :
+    (session.role === 'REVIEWER' || session.role === 'APPROVER') ? { reviews: { some: { reviewerId: session.userId } } } :
+    { uploadedById: session.userId }
   const categoryCounts = await Promise.all(
     docTypeCategories.map(async (cat) => ({
       category: cat,
@@ -193,7 +207,11 @@ export default async function DashboardPage() {
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatsCard
           icon={FileText}
-          label={session.role === 'ADMIN' ? 'Total Documents' : 'My Documents'}
+          label={
+            session.role === 'ADMIN' ? 'Total Documents' :
+            (session.role === 'REVIEWER' || session.role === 'APPROVER') ? 'Assigned to Me' :
+            'My Documents'
+          }
           value={totalDocs}
           href="/documents"
         />
@@ -340,7 +358,11 @@ export default async function DashboardPage() {
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-800 flex items-center gap-2">
               <FileText className="h-4 w-4 text-sanpc-navy" />
-              {session.role === 'ADMIN' ? 'Recent Documents' : 'My Recent Documents'}
+              {
+                session.role === 'ADMIN' ? 'Recent Documents' :
+                (session.role === 'REVIEWER' || session.role === 'APPROVER') ? 'My Assigned Documents' :
+                'My Recent Documents'
+              }
             </h2>
             <Link
               href="/documents"
