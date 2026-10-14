@@ -179,23 +179,21 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
     try {
       const fd = new FormData()
       fd.append('file', signFile)
+      // Pass autoControl so sign + CONTROLLED transition happen in one atomic server call
+      if (document.status === 'APPROVED') fd.append('autoControl', 'true')
       const res = await fetch(`/api/documents/${document.id}/sign`, { method: 'POST', body: fd })
       if (res.ok) {
-        const signedDoc = await res.json()
         setSignFile(null)
-        // Auto-transition to CONTROLLED after uploading signed page on an APPROVED document
-        if (document.status === 'APPROVED') {
-          const ctrlRes = await fetch(`/api/documents/${document.id}/control`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'CONTROLLED' }),
-          })
-          onUpdate(ctrlRes.ok ? await ctrlRes.json() : signedDoc)
-        } else {
-          onUpdate(signedDoc)
-        }
-      } else { const d = await res.json().catch(() => ({})); setError(d.error || `Error ${res.status}`) }
-    } finally { setLoading(null) }
+        onUpdate(await res.json())
+      } else {
+        const d = await res.json().catch(() => ({}))
+        setError(d.error || `Upload failed (${res.status})`)
+      }
+    } catch (err) {
+      setError(`Upload failed — ${err instanceof Error ? err.message : 'network error'}`)
+    } finally {
+      setLoading(null)
+    }
   }
 
   // ── Review complete / Updating: back with doc manager ────────────────────
