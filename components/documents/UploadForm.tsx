@@ -118,6 +118,7 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
   // Step 3: Workflow
   const [reviewers, setReviewers] = useState<WorkflowMember[]>([])
   const [approvers, setApprovers] = useState<WorkflowMember[]>([])
+  const [authorizers, setAuthorizers] = useState<WorkflowMember[]>([])
   // DLT-05: 21 days is the minimum review window (for offshore staff) — do not reduce without approval
   const [reviewDeadlineDays, setReviewDeadlineDays] = useState<string>('21')
   const [dragOverId, setDragOverId] = useState<string | null>(null)
@@ -126,9 +127,10 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
   const [mandatoryReviewers, setMandatoryReviewers] = useState<MandatoryReviewer[]>([])
   const [loadingMandatory, setLoadingMandatory] = useState(false)
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null)
-  // Track auto-added IDs separately: originator → reviewers, authorizer → approvers
+  // Track auto-added IDs separately: originator → reviewers, authorizerUser → authorizers
   const autoAddedReviewerId = useRef<string | null>(null)
   const autoAddedApproverId = useRef<string | null>(null)
+  const autoAddedAuthorizerId = useRef<string | null>(null)
   // W5: track which reviewer IDs came from the previous mandatory set so we can
   // remove only those (not manually-added reviewers) when the document type changes
   const prevMandatoryIds = useRef<Set<string>>(new Set())
@@ -139,6 +141,7 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
   // F-1.7: Document Controller (DOCUMENT_MANAGER) must not be a reviewer
   const reviewerUsers = users.filter((u) => u.role !== 'DOCUMENT_MANAGER')
   const approverUsers = users
+  const authorizerUsers = users
   const docTypeCode = SANPC_DOC_TYPES.find((t) => t.label === category)?.code ?? ''
   const dragItemRef = useRef<string | null>(null)
   const dragOverRef = useRef<string | null>(null)
@@ -198,11 +201,11 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [originatorUser?.id, originatorUser?.email])
 
-  // DLT-12: Approved By → Approvers (replace previous auto-added entry on change)
+  // DLT-12: Authorized By → Authorizers (replace previous auto-added entry on change)
   useEffect(() => {
-    setApprovers((prev) => {
-      const merged = autoMerge(prev, authorizerUser, autoAddedApproverId.current)
-      autoAddedApproverId.current = authorizerUser ? userKey(authorizerUser) : null
+    setAuthorizers((prev) => {
+      const merged = autoMerge(prev, authorizerUser, autoAddedAuthorizerId.current)
+      autoAddedAuthorizerId.current = authorizerUser ? userKey(authorizerUser) : null
       return merged
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -270,14 +273,16 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
         const hasPermission = details.some((d) => d.includes('403') || d.includes('Forbidden') || d.includes('AccessDenied'))
         if (hasPermission) {
           setFileError('SharePoint upload was blocked (403 Forbidden). The DMS app may not have permission to write to the SharePoint document library. Please ask your IT administrator to grant Files.ReadWrite.All on the Azure app registration.')
-        } else if (details.length > 0) {
-          setFileError(`Upload failed: ${details[0].replace(/^SharePoint:\s*Error:\s*/i, '')}`)
+        } else if (res.status === 400) {
+          setFileError('The document could not be read. Please ensure it is a valid Word file (.doc or .docx) and try again.')
+        } else if (res.status === 401) {
+          setFileError('Your session has expired. Please sign out and sign in again.')
         } else {
-          setFileError(err.error || 'Upload failed — please try again.')
+          setFileError('The document could not be uploaded. Please try again, or contact your IT administrator if the issue continues.')
         }
       }
     } catch {
-      setFileError('Network error — could not reach the server. Please check your connection and try again.')
+      setFileError('Could not reach the server. Please check your connection and try again.')
     } finally {
       setUploading(false)
     }
@@ -315,7 +320,7 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
 
   async function handleSubmit() {
     if (!uploadResult || !title) return
-    if (reviewers.length === 0 && approvers.length === 0) return
+    if (reviewers.length === 0 && approvers.length === 0 && authorizers.length === 0) return
     setSubmitting(true)
     setSubmitError('')
     try {
@@ -327,6 +332,7 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
           reviewDeadlineDays: reviewDeadlineDays ? Number(reviewDeadlineDays) : null,
           reviewers: reviewers.map((r) => ({ userId: r.userId, email: r.email, name: r.name, order: r.order })),
           approvers: approvers.map((a) => ({ userId: a.userId, email: a.email, name: a.name, order: a.order })),
+          authorizers: authorizers.map((a) => ({ userId: a.userId, email: a.email, name: a.name, order: a.order })),
           metadata: metadata.filter((m) => m.key && m.value),
           documentNumber: documentNumber || undefined, documentTypeCode: docTypeCode || undefined,
           revision: revision || '00',
@@ -444,7 +450,7 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
     )
   }
 
-  const canProceed = reviewers.length > 0 || approvers.length > 0
+  const canProceed = reviewers.length > 0 || approvers.length > 0 || authorizers.length > 0
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -624,7 +630,7 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
               )}
             </div>
             <p className="text-sm text-gray-500 mt-1 mb-0">
-              All reviewers receive the document at the same time. Once all approve, it moves to approvers.
+              All reviewers receive the document at the same time. Once all approve, it moves to approvers, then authorizers (if assigned).
             </p>
           </div>
 
@@ -714,8 +720,20 @@ export default function UploadForm({ users }: { users: UserOption[] }) {
             />
           </div>
 
+          {/* Authorizers (post-approval sign-off) */}
+          <div className="rounded-xl border border-teal-200 p-4">
+            <MemberList
+              label="Authorizers (post-approval sign-off)"
+              sublabel="Authorizers give the final high-level sign-off after all approvers have approved. All notified simultaneously. Drag to reorder."
+              members={authorizers}
+              pool={authorizerUsers}
+              setList={setAuthorizers}
+              emptyText="No authorizers — document moves directly to Approved after all approvers sign off."
+            />
+          </div>
+
           {!canProceed && (
-            <p className="text-sm text-red-500">Add at least one reviewer or approver to continue.</p>
+            <p className="text-sm text-red-500">Add at least one reviewer, approver, or authorizer to continue.</p>
           )}
           {submitError && (
             <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{submitError}</p>

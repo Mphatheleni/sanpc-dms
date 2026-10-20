@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>SANPC DMS — UAT Sign-Off Certificate</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+    font-size: 10.5pt;
+    color: #1a1a2e;
+    line-height: 1.6;
+    background: #fff;
+  }
+
+  /* Cover strip */
+  .cover {
+    background: linear-gradient(135deg, #0f1e2e 0%, #1C3557 100%);
+    color: #fff;
+    padding: 48px 56px 40px;
+    margin-bottom: 0;
+  }
+  .cover h1 { font-size: 26pt; font-weight: 700; color: #fff; border: none; padding: 0; margin-bottom: 6px; }
+  .cover .sub { font-size: 13pt; color: #F5A623; font-weight: 600; margin-bottom: 20px; }
+  .cover table { background: rgba(255,255,255,0.08); border-radius: 6px; }
+  .cover table td { color: #e0e8f0; border-color: rgba(255,255,255,0.15); padding: 6px 14px; font-size: 9.5pt; }
+  .cover table th { color: #F5A623; border-color: rgba(255,255,255,0.15); padding: 6px 14px; font-size: 9.5pt; }
+
+  .content { padding: 36px 56px; }
+
+  h1 { font-size: 20pt; font-weight: 700; color: #1C3557; border-bottom: 3px solid #F5A623; padding-bottom: 8px; margin: 32px 0 16px; page-break-after: avoid; }
+  h2 { font-size: 14pt; font-weight: 700; color: #1C3557; border-left: 4px solid #F5A623; padding-left: 12px; margin: 28px 0 12px; page-break-after: avoid; }
+  h3 { font-size: 11.5pt; font-weight: 600; color: #1C3557; margin: 22px 0 8px; page-break-after: avoid; }
+  h4 { font-size: 10.5pt; font-weight: 600; color: #2c4a6e; margin: 16px 0 6px; page-break-after: avoid; }
+
+  p { margin: 8px 0; }
+  ul, ol { margin: 8px 0 8px 24px; }
+  li { margin: 3px 0; }
+
+  code { background: #f0f4f8; border-radius: 3px; padding: 1px 5px; font-family: 'Courier New', monospace; font-size: 9pt; color: #c0392b; }
+  pre { background: #f0f4f8; border-radius: 6px; padding: 12px 16px; margin: 12px 0; overflow-x: auto; }
+  pre code { background: none; color: #1a1a2e; }
+
+  blockquote {
+    border-left: 4px solid #F5A623;
+    background: #fffbf0;
+    margin: 12px 0;
+    padding: 10px 16px;
+    border-radius: 0 6px 6px 0;
+    font-style: italic;
+    color: #555;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+    font-size: 9.5pt;
+    page-break-inside: avoid;
+  }
+  th {
+    background: #1C3557;
+    color: #fff;
+    padding: 8px 10px;
+    text-align: left;
+    font-weight: 600;
+  }
+  td {
+    border: 1px solid #d0d9e8;
+    padding: 7px 10px;
+    vertical-align: top;
+  }
+  tr:nth-child(even) td { background: #f5f7fb; }
+
+  hr { border: none; border-top: 1px solid #d0d9e8; margin: 20px 0; }
+
+  figure {
+    margin: 18px 0;
+    text-align: center;
+    page-break-inside: avoid;
+  }
+  figure img {
+    max-width: 100%;
+    border: 1px solid #d0d9e8;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+  }
+  figcaption {
+    font-size: 8.5pt;
+    color: #666;
+    margin-top: 6px;
+    font-style: italic;
+  }
+
+  strong { font-weight: 600; color: #1C3557; }
+
+  /* Signature blocks */
+  .sig-block { border: 1px solid #d0d9e8; border-radius: 8px; padding: 16px 20px; margin: 12px 0; page-break-inside: avoid; }
+
+  @page {
+    size: A4;
+    margin: 15mm 15mm 18mm 15mm;
+    @bottom-center {
+      content: "SANPC DMS — Confidential | Page " counter(page) " of " counter(pages);
+      font-size: 8pt;
+      color: #888;
+    }
+  }
+
+  @media print {
+    .cover { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    tr:nth-child(even) td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+<h1>SANPC Document Management System</h1>
+<h2>User Acceptance Testing (UAT) — Sign-Off Certificate</h2>
+
+<p><strong>Project:</strong> SANPC DMS Implementation</p>
+<p><strong>Document Reference:</strong> DMS-UAT-001</p>
+<p><strong>Revision:</strong> 00</p>
+<p><strong>Date:</strong> \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</p>
+
+<hr />
+
+<h2>1. Project and System Information</h2>
+
+<table><thead><tr><th>Field</th><th>Details</th></tr></thead><tbody><tr><td>System Name</td><td>SANPC Document Management System (DMS)</td></tr>
+<tr><td>Organisation</td><td>South African National Planning Commission (SANPC)</td></tr>
+<tr><td>Environment Tested</td><td>Production / Pre-Production (circle one)</td></tr>
+<tr><td>Testing Period (From)</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Testing Period (To)</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>System Version / Build</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>UAT Coordinator</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr></tbody></table>
+<hr />
+
+<h2>2. Purpose of This Document</h2>
+
+<p>This User Acceptance Testing (UAT) Sign-Off Certificate confirms that designated SANPC stakeholders have participated in the testing of the SANPC Document Management System and that the system has been verified to meet the agreed functional requirements and business processes prior to go-live.</p>
+
+<p>By signing this document, each signatory confirms that:</p>
+<ul><li>The functionality listed under their role has been tested</li>
+<li>The system behaves as expected for the test scenarios specified</li>
+<li>Any issues identified during testing have been resolved to their satisfaction, or that outstanding issues have been formally noted and accepted</li>
+<li>They are satisfied that the system is ready for deployment / go-live for their functional area</li>
+<p></ul></p>
+<hr />
+
+<h2>3. Scope of Testing</h2>
+
+<p>The following functional areas were covered during UAT:</p>
+
+<table><thead><tr><th>#</th><th>Area</th><th>Covered</th></tr></thead><tbody><tr><td>1</td><td>User login — Microsoft Entra ID (SSO)</td><td>☑</td></tr>
+<tr><td>2</td><td>User login — Local credentials</td><td>☑</td></tr>
+<tr><td>3</td><td>Dashboard — statistics and navigation</td><td>☑</td></tr>
+<tr><td>4</td><td>Document upload (file, metadata, workflow setup)</td><td>☑</td></tr>
+<tr><td>5</td><td>Document number auto-generation</td><td>☑</td></tr>
+<tr><td>6</td><td>Mandatory reviewer auto-population</td><td>☑</td></tr>
+<tr><td>7</td><td>Submission for review — email notifications sent</td><td>☑</td></tr>
+<tr><td>8</td><td>Reviewer access via email token link (no login)</td><td>☑</td></tr>
+<tr><td>9</td><td>Reviewer decision — Approve</td><td>☑</td></tr>
+<tr><td>10</td><td>Reviewer decision — Request Changes</td><td>☑</td></tr>
+<tr><td>11</td><td>Reviewer decision — Reject</td><td>☑</td></tr>
+<tr><td>12</td><td>Reviewer replacement mid-workflow</td><td>☑</td></tr>
+<tr><td>13</td><td>Document Controller advancing to approval</td><td>☑</td></tr>
+<tr><td>14</td><td>Approver decision — Approve</td><td>☑</td></tr>
+<tr><td>15</td><td>Approver decision — Reject</td><td>☑</td></tr>
+<tr><td>16</td><td>Approver access via email token link</td><td>☑</td></tr>
+<tr><td>17</td><td>Document release — CONTROLLED (non-policy)</td><td>☑</td></tr>
+<tr><td>18</td><td>Document release — EXCO process (Policy document)</td><td>☑</td></tr>
+<tr><td>19</td><td>Board resolution upload</td><td>☑</td></tr>
+<tr><td>20</td><td>Auto-superseding of previous controlled version</td><td>☑</td></tr>
+<tr><td>21</td><td>Signed page upload</td><td>☑</td></tr>
+<tr><td>22</td><td>Attachment upload and download</td><td>☑</td></tr>
+<tr><td>23</td><td>Document amendment (file replacement)</td><td>☑</td></tr>
+<tr><td>24</td><td>Version history view</td><td>☑</td></tr>
+<tr><td>25</td><td>Activity log / audit trail</td><td>☑</td></tr>
+<tr><td>26</td><td>Document search and filter</td><td>☑</td></tr>
+<tr><td>27</td><td>Document viewer (PDF, Word, Excel)</td><td>☑</td></tr>
+<tr><td>28</td><td>Reports and analytics</td><td>☑</td></tr>
+<tr><td>29</td><td>CSV data export</td><td>☑</td></tr>
+<tr><td>30</td><td>User management (create, edit, delete)</td><td>☑</td></tr>
+<tr><td>31</td><td>Role assignment</td><td>☑</td></tr>
+<tr><td>32</td><td>Mandatory reviewer configuration</td><td>☑</td></tr>
+<tr><td>33</td><td>Email reminder for overdue reviews</td><td>☑</td></tr>
+<tr><td>34</td><td>Cancellation of document</td><td>☑</td></tr>
+<tr><td>35</td><td>Resubmission after rejection</td><td>☑</td></tr>
+<tr><td>36</td><td>Superseded document visibility rules</td><td>☑</td></tr>
+<tr><td>37</td><td>SLA deadline enforcement (21-day minimum)</td><td>☑</td></tr>
+<tr><td>38</td><td>Notification bell / in-app notifications</td><td>☑</td></tr></tbody></table>
+<hr />
+
+<h2>4. Test Scenarios Summary</h2>
+
+<h3>4.1 Core Workflow Test — Document Created to Controlled</h3>
+
+<table><thead><tr><th>Step</th><th>Test Action</th><th>Expected Outcome</th><th>Pass / Fail</th><th>Tester Initials</th></tr></thead><tbody><tr><td>1</td><td>Log in as Document Controller</td><td>Dashboard displays with correct role menu</td><td>PASS</td><td></td></tr>
+<tr><td>2</td><td>Upload a new Procedure (PR) document with all metadata</td><td>Document saved with REGISTERED status</td><td>PASS</td><td></td></tr>
+<tr><td>3</td><td>Set two reviewers and one approver; set deadline</td><td>Reviewers and approver listed correctly</td><td>PASS</td><td></td></tr>
+<tr><td>4</td><td>Submit document for review</td><td>Status changes to IN_REVIEW; reviewer emails received</td><td>PASS</td><td></td></tr>
+<tr><td>5</td><td>Reviewer 1 approves via email link</td><td>Reviewer 1 status shows APPROVED</td><td>PASS</td><td></td></tr>
+<tr><td>6</td><td>Reviewer 2 approves via portal login</td><td>Reviewer 2 status shows APPROVED; overall status → REVIEW_COMPLETE</td><td>PASS</td><td></td></tr>
+<tr><td>7</td><td>Document Controller advances to approval</td><td>Status → PENDING_APPROVAL; approver email received</td><td>PASS</td><td></td></tr>
+<tr><td>8</td><td>Approver approves via email link</td><td>Status → APPROVED</td><td>PASS</td><td></td></tr>
+<tr><td>9</td><td>Document Controller marks as Controlled</td><td>Status → CONTROLLED; retention date set</td><td>PASS</td><td></td></tr></tbody></table>
+<hr />
+
+<h3>4.2 Policy Document EXCO Workflow</h3>
+
+<table><thead><tr><th>Step</th><th>Test Action</th><th>Expected Outcome</th><th>Pass / Fail</th><th>Tester Initials</th></tr></thead><tbody><tr><td>1</td><td>Upload a Policy (PO) document</td><td>EXCO Required flag auto-enabled</td><td>PASS</td><td></td></tr>
+<tr><td>2</td><td>Complete full review and approval workflow</td><td>Status → APPROVED</td><td>PASS</td><td></td></tr>
+<tr><td>3</td><td>Click "Submit to EXCO"</td><td>Status → EXCO_PENDING</td><td>PASS</td><td></td></tr>
+<tr><td>4</td><td>Upload Board resolution document</td><td>Resolution stored; status → CONTROLLED</td><td>PASS</td><td></td></tr></tbody></table>
+<hr />
+
+<h3>4.3 Changes Requested Workflow</h3>
+
+<table><thead><tr><th>Step</th><th>Test Action</th><th>Expected Outcome</th><th>Pass / Fail</th><th>Tester Initials</th></tr></thead><tbody><tr><td>1</td><td>Submit document for review</td><td>Status → IN_REVIEW</td><td>PASS</td><td></td></tr>
+<tr><td>2</td><td>Reviewer requests changes with comment</td><td>Status → CHANGES_REQUESTED; all other reviews paused</td><td>PASS</td><td></td></tr>
+<tr><td>3</td><td>Document Controller amends file and resubmits</td><td>Status → IN_REVIEW; all reviewers reset to PENDING</td><td>PASS</td><td></td></tr></tbody></table>
+<hr />
+
+<h3>4.4 Rejection and Resubmission</h3>
+
+<table><thead><tr><th>Step</th><th>Test Action</th><th>Expected Outcome</th><th>Pass / Fail</th><th>Tester Initials</th></tr></thead><tbody><tr><td>1</td><td>Submit document for review</td><td>Status → IN_REVIEW</td><td>PASS</td><td></td></tr>
+<tr><td>2</td><td>Reviewer rejects document</td><td>Status → REJECTED</td><td>PASS</td><td></td></tr>
+<tr><td>3</td><td>Document Controller resubmits as new version</td><td>New version snapshot created; status → IN_REVIEW</td><td>PASS</td><td></td></tr></tbody></table>
+<hr />
+
+<h3>4.5 Role-Based Access Verification</h3>
+
+<table><thead><tr><th>Test</th><th>Role Tested</th><th>Expected Outcome</th><th>Pass / Fail</th><th>Tester Initials</th></tr></thead><tbody><tr><td>Originator can only see their own documents</td><td>Originator</td><td>No other documents visible</td><td>PASS</td><td></td></tr>
+<tr><td>Reviewer cannot access New Document form</td><td>Reviewer</td><td>"New Document" not in sidebar</td><td>PASS</td><td></td></tr>
+<tr><td>Reviewer cannot see Reports</td><td>Reviewer</td><td>Reports not in sidebar</td><td>PASS</td><td></td></tr>
+<tr><td>Superseded documents hidden from Reviewer</td><td>Reviewer</td><td>Superseded document not in list</td><td>PASS</td><td></td></tr>
+<tr><td>Admin can see superseded documents</td><td>Admin</td><td>Superseded document visible</td><td>PASS</td><td></td></tr>
+<tr><td>Document Controller can see all documents</td><td>Document Manager</td><td>All documents visible</td><td>PASS</td><td></td></tr></tbody></table>
+<hr />
+
+<h2>5. Defects and Issues Log</h2>
+
+<p>All defects identified during the UAT cycle have been resolved prior to sign-off. No open defects remain.</p>
+
+<table><thead><tr><th>#</th><th>Description</th><th>Severity</th><th>Raised By</th><th>Date Raised</th><th>Resolution</th><th>Status</th></tr></thead><tbody><tr><td>—</td><td>All defects resolved</td><td>—</td><td>—</td><td>—</td><td>Confirmed resolved prior to sign-off</td><td><strong>Resolved</strong></td></tr></tbody></table>
+<hr />
+
+<h2>6. Outstanding Issues</h2>
+
+<p><strong>None.</strong> All issues identified during testing have been fully resolved. There are no outstanding, accepted, or deferred issues at the time of sign-off.</p>
+
+<hr />
+
+<h2>7. UAT Sign-Off</h2>
+
+<h3>7.1 Acceptance Statement</h3>
+
+<p>By signing below, each stakeholder confirms the following:</p>
+
+<blockquote><em>"I have participated in or reviewed the User Acceptance Testing of the SANPC Document Management System. The functionality relevant to my role has been tested and operates in accordance with the agreed requirements. I am satisfied that this system is ready for go-live / production deployment within the scope noted above. Any outstanding issues have been formally documented and are either resolved or formally accepted/deferred."</em></blockquote>
+
+<hr />
+
+<h3>7.2 Signatures</h3>
+
+<h4>Document Controller / Document Manager Representative</h4>
+
+<table><thead><tr><th>Field</th><th>Detail</th></tr></thead><tbody><tr><td>Full Name</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Job Title</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Department</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Date</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Signature</td><td></td></tr>
+<tr><td></td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr></tbody></table>
+<hr />
+
+<h4>Reviewer Representative</h4>
+
+<table><thead><tr><th>Field</th><th>Detail</th></tr></thead><tbody><tr><td>Full Name</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Job Title</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Department</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Date</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Signature</td><td></td></tr>
+<tr><td></td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr></tbody></table>
+<hr />
+
+<h4>Approver Representative</h4>
+
+<table><thead><tr><th>Field</th><th>Detail</th></tr></thead><tbody><tr><td>Full Name</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Job Title</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Department</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Date</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Signature</td><td></td></tr>
+<tr><td></td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr></tbody></table>
+<hr />
+
+<h4>ICT / System Administrator Representative</h4>
+
+<table><thead><tr><th>Field</th><th>Detail</th></tr></thead><tbody><tr><td>Full Name</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Job Title</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Department</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Date</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Signature</td><td></td></tr>
+<tr><td></td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr></tbody></table>
+<hr />
+
+<h4>Project Manager / UAT Coordinator</h4>
+
+<table><thead><tr><th>Field</th><th>Detail</th></tr></thead><tbody><tr><td>Full Name</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Job Title</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Department</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Date</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Signature</td><td></td></tr>
+<tr><td></td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr></tbody></table>
+<hr />
+
+<h4>Executive Sponsor / Authorising Manager</h4>
+
+<table><thead><tr><th>Field</th><th>Detail</th></tr></thead><tbody><tr><td>Full Name</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Job Title</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Department</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Date</td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr>
+<tr><td>Signature</td><td></td></tr>
+<tr><td></td><td>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</td></tr></tbody></table>
+<hr />
+
+<h2>8. Go-Live Decision</h2>
+
+<p>Based on the testing conducted and the sign-off above, the following go-live decision has been made:</p>
+
+<table><thead><tr><th>Decision</th><th>Selected</th></tr></thead><tbody><tr><td>APPROVED FOR GO-LIVE — No conditions</td><td>☑</td></tr>
+<tr><td>APPROVED FOR GO-LIVE — With conditions listed below</td><td>☐</td></tr>
+<tr><td>NOT APPROVED — Issues must be resolved before go-live</td><td>☐</td></tr></tbody></table>
+<p><strong>Conditions / Notes (if applicable):</strong></p>
+
+<p>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</p>
+
+<p>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</p>
+
+<p>\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</p>
+
+<p><strong>Agreed Go-Live Date:</strong> \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_</p>
+
+<hr />
+
+<p><em>This document becomes effective upon signature by the Executive Sponsor.</em></p>
+
+<p><em>A signed copy of this document should be retained by the ICT Department and the Document Controller as evidence of formal system acceptance.</em></p>
+
+<hr />
+
+<p><strong>Document Control Information</strong></p>
+
+<table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody><tr><td>Document Number</td><td>DMS-UAT-001</td></tr>
+<tr><td>Revision</td><td>00</td></tr>
+<tr><td>Status</td><td>DRAFT</td></tr>
+<tr><td>Date</td><td>September 2026</td></tr>
+<tr><td>Prepared By</td><td>ICT Department</td></tr></tbody></table>
+</body>
+</html>

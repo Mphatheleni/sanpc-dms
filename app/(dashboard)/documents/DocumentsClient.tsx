@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import {
   FileText, LayoutGrid, List, Download, Trash2, Eye,
   ChevronLeft, ChevronRight, MoreHorizontal, FilePlus, Paperclip,
-  CheckCircle2, Clock,
+  CheckCircle2, Clock, ShieldCheck,
 } from 'lucide-react'
 import StatusBadge from '@/components/documents/StatusBadge'
 import DocumentCard from '@/components/documents/DocumentCard'
@@ -23,6 +23,11 @@ function avatarInitials(name: string) {
 /** All assigned approvers that have not been removed */
 function getApprovers(doc: Document): DocumentReview[] {
   return (doc.reviews ?? []).filter((r) => r.isApprover && r.status !== 'REMOVED')
+}
+
+/** All assigned authorizers that have not been removed */
+function getAuthorizers(doc: Document): DocumentReview[] {
+  return (doc.reviews ?? []).filter((r) => r.isAuthorizer && r.status !== 'REMOVED')
 }
 
 const PAGE_SIZE = 10
@@ -155,7 +160,7 @@ export default function DocumentsClient({ documents, canCreate, userId, userRole
                   <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Category</th>
                   <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">Doc Control</th>
                   <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden xl:table-cell">Originator</th>
-                  <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden xl:table-cell">Approver(s)</th>
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden xl:table-cell">Approver(s) / Auth.</th>
                   <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">Updated</th>
                   <th className="px-5 py-3.5 w-12" />
                 </tr>
@@ -171,6 +176,15 @@ export default function DocumentsClient({ documents, canCreate, userId, userRole
                       : approverNames.length <= 2
                         ? approverNames.join(', ')
                         : `${approverNames[0]}, +${approverNames.length - 1} more`
+
+                  const authorizers = getAuthorizers(doc)
+                  const authorizerNames = authorizers.map((r) => r.reviewer.name)
+                  const authorizerLabel =
+                    authorizerNames.length === 0
+                      ? null
+                      : authorizerNames.length <= 2
+                        ? authorizerNames.join(', ')
+                        : `${authorizerNames[0]}, +${authorizerNames.length - 1} more`
 
                   const originatorName = doc.originatorUser?.name ?? doc.originator ?? null
 
@@ -254,19 +268,28 @@ export default function DocumentsClient({ documents, canCreate, userId, userRole
                         )}
                       </td>
 
-                      {/* Approver(s) */}
+                      {/* Approver(s) / Authorizer(s) */}
                       <td className="px-5 py-4 hidden xl:table-cell">
-                        {approverLabel ? (
-                          <div className="flex items-center gap-1.5">
-                            {allApproved
-                              ? <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-green-500" />
-                              : <Clock className="h-3.5 w-3.5 flex-shrink-0 text-amber-400" />
-                            }
-                            <span className="text-xs text-gray-700 truncate max-w-[110px]">{approverLabel}</span>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-gray-300">—</span>
-                        )}
+                        <div className="space-y-1">
+                          {approverLabel && (
+                            <div className="flex items-center gap-1.5">
+                              {allApproved
+                                ? <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-green-500" />
+                                : <Clock className="h-3.5 w-3.5 flex-shrink-0 text-amber-400" />
+                              }
+                              <span className="text-xs text-gray-700 truncate max-w-[110px]">{approverLabel}</span>
+                            </div>
+                          )}
+                          {authorizerLabel && (
+                            <div className="flex items-center gap-1.5">
+                              <ShieldCheck className="h-3.5 w-3.5 flex-shrink-0 text-teal-500" />
+                              <span className="text-xs text-gray-600 truncate max-w-[110px]">{authorizerLabel}</span>
+                            </div>
+                          )}
+                          {!approverLabel && !authorizerLabel && (
+                            <span className="text-xs text-gray-300">—</span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Updated date */}

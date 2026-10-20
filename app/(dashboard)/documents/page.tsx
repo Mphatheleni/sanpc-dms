@@ -20,6 +20,7 @@ export default async function DocumentsPage({ searchParams }: PageProps) {
   const where: any = {}
   if (session.role === 'REVIEWER') where.reviews = { some: { reviewerId: session.userId } }
   else if (session.role === 'APPROVER') where.reviews = { some: { reviewerId: session.userId, isApprover: true } }
+  else if (session.role === 'AUTHORIZER') where.reviews = { some: { reviewerId: session.userId, isAuthorizer: true } }
   else if (session.role === 'ORIGINATOR') where.originatorId = session.userId
   // ADMIN and DOCUMENT_MANAGER see all documents
 
@@ -58,7 +59,7 @@ export default async function DocumentsPage({ searchParams }: PageProps) {
 
   const statuses: DocumentStatus[] = [
     'REGISTERED', 'DRAFT', 'IN_REVIEW', 'UPDATING', 'REVIEW_COMPLETE', 'FINAL_DRAFT',
-    'PENDING_APPROVAL', 'APPROVED', 'EXCO_PENDING', 'CONTROLLED', 'SUPERSEDED',
+    'PENDING_APPROVAL', 'PENDING_AUTHORIZATION', 'APPROVED', 'EXCO_PENDING', 'CONTROLLED', 'SUPERSEDED',
     'CANCELLED', 'REJECTED', 'CHANGES_REQUESTED', 'PENDING_REVIEW',
   ]
 
@@ -71,6 +72,7 @@ export default async function DocumentsPage({ searchParams }: PageProps) {
     REVIEW_COMPLETE: 'Review Complete',
     FINAL_DRAFT: 'Final Draft',
     PENDING_APPROVAL: 'Pending Approval',
+    PENDING_AUTHORIZATION: 'Pending Authorization',
     APPROVED: 'Approved',
     EXCO_PENDING: 'EXCO Pending',
     REJECTED: 'Rejected',

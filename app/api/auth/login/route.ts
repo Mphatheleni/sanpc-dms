@@ -15,6 +15,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
   }
 
+  // Users added via Microsoft org search are SSO-only (password is '') — bcrypt.compare
+  // throws on an empty-string hash, so guard against it explicitly.
+  if (!user.password) {
+    return NextResponse.json(
+      { error: 'This account uses Microsoft sign-in. Please use the "Sign in with Microsoft" button.' },
+      { status: 401 },
+    )
+  }
+
   const valid = await bcrypt.compare(password, user.password)
   if (!valid) {
     return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })

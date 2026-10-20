@@ -2,7 +2,7 @@
 
 import { useRouter, usePathname } from 'next/navigation'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { LogOut, Bell, Search, CheckCircle, AlertTriangle, MessageSquare, Clock, FileCheck, User } from 'lucide-react'
+import { LogOut, Bell, Search, CheckCircle, AlertTriangle, MessageSquare, Clock, FileCheck, RefreshCw, ShieldCheck } from 'lucide-react'
 import type { SessionUser } from '@/types'
 
 const roleLabels: Record<string, string> = {
@@ -10,6 +10,8 @@ const roleLabels: Record<string, string> = {
   DOCUMENT_MANAGER: 'Document Controller',
   REVIEWER:         'Reviewer',
   APPROVER:         'Approver',
+  AUTHORIZER:       'Authorizer',
+  ORIGINATOR:       'Originator',
 }
 
 const roleColors: Record<string, { bg: string; text: string }> = {
@@ -17,9 +19,11 @@ const roleColors: Record<string, { bg: string; text: string }> = {
   DOCUMENT_MANAGER: { bg: '#E8EDF4', text: '#1C3557' },
   REVIEWER:         { bg: '#EDE9FE', text: '#5B21B6' },
   APPROVER:         { bg: '#DCFCE7', text: '#166534' },
+  AUTHORIZER:       { bg: '#CCFBF1', text: '#0F766E' },
+  ORIGINATOR:       { bg: '#FEF3C7', text: '#92400E' },
 }
 
-type NotificationType = 'REVIEW_ASSIGNED' | 'APPROVED' | 'REJECTED' | 'CHANGES_REQUESTED' | 'REVIEW_COMPLETE' | 'COMMENT_ADDED'
+type NotificationType = 'REVIEW_ASSIGNED' | 'APPROVED' | 'REJECTED' | 'CHANGES_REQUESTED' | 'REVIEW_COMPLETE' | 'COMMENT_ADDED' | 'ROLE_CHANGED' | 'STATUS_CHANGE'
 
 interface Notification {
   id: string
@@ -39,6 +43,8 @@ function notificationIcon(type: string) {
     case 'CHANGES_REQUESTED':return <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0" />
     case 'REVIEW_COMPLETE':  return <FileCheck className="h-4 w-4 text-purple-500 flex-shrink-0" />
     case 'COMMENT_ADDED':    return <MessageSquare className="h-4 w-4 text-gray-500 flex-shrink-0" />
+    case 'ROLE_CHANGED':     return <ShieldCheck className="h-4 w-4 text-[#1C3557] flex-shrink-0" />
+    case 'STATUS_CHANGE':    return <RefreshCw className="h-4 w-4 text-[#1C3557] flex-shrink-0" />
     default:                 return <Bell className="h-4 w-4 text-gray-400 flex-shrink-0" />
   }
 }
@@ -65,6 +71,7 @@ export default function Header({ session }: { session: SessionUser }) {
   const router = useRouter()
   const pathname = usePathname()
   const [notifications, setNotifications] = useState<Notification[]>([])
+  const [roleChangedMsg, setRoleChangedMsg] = useState<string | null>(null)
   const [bellOpen, setBellOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -76,7 +83,16 @@ export default function Header({ session }: { session: SessionUser }) {
   const fetchNotifications = useCallback(async () => {
     try {
       const res = await fetch('/api/notifications')
-      if (res.ok) setNotifications(await res.json())
+      if (!res.ok) return
+      const data: Notification[] = await res.json()
+      setNotifications(data)
+      // Detect unread role-change notifications and show a persistent banner
+      const roleChange = data.find((n) => n.type === 'ROLE_CHANGED' && !n.read)
+      if (roleChange) {
+        setRoleChangedMsg(roleChange.message)
+        // Mark it read immediately so the banner won't reappear after refresh
+        fetch(`/api/notifications/${roleChange.id}`, { method: 'PATCH' }).catch(() => {})
+      }
     } catch { /* ignore */ }
   }, [])
 
@@ -126,6 +142,22 @@ export default function Header({ session }: { session: SessionUser }) {
   const initials = session.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
 
   return (
+    <>
+    {roleChangedMsg && (
+      <div className="fixed inset-x-0 top-0 z-[9999] flex items-center justify-between gap-4 bg-[#1C3557] px-6 py-3 shadow-lg">
+        <div className="flex items-center gap-3 min-w-0">
+          <ShieldCheck className="h-4 w-4 shrink-0 text-[#F5A623]" />
+          <p className="text-sm font-medium text-white truncate">{roleChangedMsg}</p>
+        </div>
+        <button
+          onClick={() => window.location.reload()}
+          className="flex shrink-0 items-center gap-2 rounded-md bg-[#F5A623] px-4 py-2 text-sm font-bold text-[#1C3557] hover:bg-yellow-400 transition-colors"
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+          Refresh Now
+        </button>
+      </div>
+    )}
     <header className="flex h-16 items-center justify-between border-b border-gray-200 bg-white px-6 shadow-sm gap-4">
       {/* Left: page title */}
       <div className="hidden sm:block min-w-0">
@@ -261,5 +293,6 @@ export default function Header({ session }: { session: SessionUser }) {
         </div>
       </div>
     </header>
+    </>
   )
 }

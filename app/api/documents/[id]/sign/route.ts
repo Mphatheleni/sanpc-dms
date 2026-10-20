@@ -32,10 +32,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     })
     if (!document) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    const canAct =
-      session.role === 'ADMIN' ||
-      session.role === 'DOCUMENT_MANAGER' ||
-      document.uploadedById === session.userId
+    const canAct = session.role === 'ADMIN' || session.role === 'DOCUMENT_MANAGER'
     if (!canAct) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     if (!['APPROVED', 'CONTROLLED', 'EXCO_PENDING'].includes(document.status)) {

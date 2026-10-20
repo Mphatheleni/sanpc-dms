@@ -30,11 +30,10 @@ export async function POST(
 
   const canManage =
     document.uploadedById === session.userId ||
-    session.role === 'ADMIN' ||
-    session.role === 'DOCUMENT_MANAGER'
+    session.role === 'ADMIN'
   if (!canManage) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  const { newReviewerId, newReviewerEmail, newReviewerName, isApprover } = await req.json()
+  const { newReviewerId, newReviewerEmail, newReviewerName, isApprover, isAuthorizer } = await req.json()
   if (!newReviewerId && !newReviewerEmail) {
     return NextResponse.json({ error: 'newReviewerId or newReviewerEmail is required' }, { status: 400 })
   }
@@ -61,7 +60,7 @@ export async function POST(
   }
 
   // Active statuses where the new person should be immediately notified
-  const activeStatuses = isApprover ? ['PENDING_APPROVAL', 'FINAL_DRAFT'] : ['IN_REVIEW']
+  const activeStatuses = isAuthorizer ? ['PENDING_AUTHORIZATION'] : isApprover ? ['PENDING_APPROVAL', 'FINAL_DRAFT'] : ['IN_REVIEW']
   const isActiveAdd = activeStatuses.includes(document.status)
 
   // Prevent duplicates — REMOVED records don't count, so removed people can be re-added
@@ -88,6 +87,7 @@ export async function POST(
       reviewerId: resolvedId,
       order: maxOrder + 1,
       isApprover: !!isApprover,
+      isAuthorizer: !!isAuthorizer,
       // If document is already in an active review stage, start immediately; otherwise keep PENDING until submit
       status: isActiveAdd ? 'IN_PROGRESS' : 'PENDING',
       startedAt: isActiveAdd ? now : null,
@@ -119,7 +119,7 @@ export async function POST(
       documentId: id,
       userId: session.userId,
       action: 'AMENDED',
-      details: `${isApprover ? 'Approver' : 'Reviewer'} ${newReviewer.name} added to workflow`,
+      details: `${isAuthorizer ? 'Authorizer' : isApprover ? 'Approver' : 'Reviewer'} ${newReviewer.name} added to workflow`,
     },
   }).catch(() => {})
 

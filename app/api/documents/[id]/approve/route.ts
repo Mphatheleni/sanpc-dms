@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { sendOriginatorNotification, sendDocControllerNotification } from '@/lib/email'
+import { sendOriginatorNotification, sendDocControllerNotification, sendBulkReviewNotificationsAsync } from '@/lib/email'
 import { createNotification } from '@/lib/notify'
+import { calcDeadline } from '@/lib/sla'
+import { emitDocStatusChange, emitReviewAssigned } from '@/lib/realtime'
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession()
@@ -20,8 +22,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const document = await prisma.document.findUnique({
     where: { id },
     include: {
-      reviews: { orderBy: { order: 'asc' } },
+      reviews: {
+        include: { reviewer: { select: { id: true, name: true, email: true } } },
+        orderBy: { order: 'asc' },
+      },
       uploadedBy: { select: { id: true, name: true, email: true } },
+      originatorUser: { select: { id: true, name: true, email: true } },
     },
   })
 
@@ -60,39 +66,87 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     )
 
     if (pendingApprovers.length === 0) {
-      // All approvers done — fully approved
-      await prisma.document.update({
-        where: { id },
-        data: { status: 'APPROVED' },
-      })
-      // Notify originator: document is fully approved
-      createNotification(
-        document.uploadedBy.id,
-        'APPROVED',
-        `Document Approved: ${document.title}`,
-        `"${document.title}" has been fully approved by all approvers.`,
-        id,
+      // All approvers done — check for authorizers
+      const authorizerReviews = document.reviews.filter(
+        (r) => r.isAuthorizer && r.status !== 'REMOVED'
       )
+
       const appUrl = process.env.APP_URL || 'http://localhost:3000'
-      // Await both notifications in parallel — Cloud Run would kill fire-and-forget
-      await Promise.all([
-        sendOriginatorNotification({
-          toEmail: document.uploadedBy.email,
-          toName: document.uploadedBy.name,
+      const documentUrl = `${appUrl}/documents/${id}`
+
+      if (authorizerReviews.length > 0) {
+        // Activate authorizer stage
+        const now2 = new Date()
+        const deadline = document.reviewDeadlineDays ? calcDeadline(now2, document.reviewDeadlineDays) : null
+        const authorizerIds = authorizerReviews.map((r) => r.id)
+
+        await prisma.$transaction([
+          prisma.documentReview.updateMany({
+            where: { id: { in: authorizerIds } },
+            data: { status: 'IN_PROGRESS', startedAt: now2, deadline },
+          }),
+          prisma.document.update({
+            where: { id },
+            data: { status: 'PENDING_AUTHORIZATION' },
+          }),
+        ])
+
+        // Notify authorizers
+        authorizerReviews.forEach((r) => {
+          createNotification(
+            r.reviewer.id,
+            'REVIEW_ASSIGNED',
+            `Authorization Required: ${document.title}`,
+            `${document.uploadedBy.name} requires your authorization for "${document.title}".`,
+            id,
+          )
+        })
+
+        await sendBulkReviewNotificationsAsync(authorizerReviews.map((r) => ({
+          toEmail: r.reviewer.email,
+          toName: r.reviewer.name,
           documentTitle: document.title,
-          documentUrl: `${appUrl}/documents/${id}`,
-          outcome: 'APPROVED',
-          reviewerName: session.name,
-          reviewerComments: comments || null,
-        }).catch((e) => console.error('[approve] originator email error:', e)),
-        sendDocControllerNotification({
-          toEmail: document.uploadedBy.email,
-          toName: document.uploadedBy.name,
-          documentTitle: document.title,
-          documentUrl: `${appUrl}/documents/${id}`,
-          stage: 'APPROVED',
-        }).catch((e) => console.error('[approve] doc controller email error:', e)),
-      ])
+          documentUrl,
+          sharePointUrl: document.sharePointUrl,
+          deadline: deadline?.toISOString() ?? null,
+          isApprover: true,
+          uploaderName: document.uploadedBy.name,
+        }))).catch((e) => console.error('[approve] authorizer email error:', e))
+
+        emitDocStatusChange(id, document.title, 'PENDING_AUTHORIZATION')
+        authorizerReviews.forEach((r) => emitReviewAssigned(r.reviewer.id, id, document.title))
+
+      } else {
+        // No authorizers — fully approved
+        await prisma.document.update({
+          where: { id },
+          data: { status: 'APPROVED' },
+        })
+        // Notify originator: document is fully approved
+        createNotification(
+          document.uploadedBy.id,
+          'APPROVED',
+          `Document Approved: ${document.title}`,
+          `"${document.title}" has been fully approved by all approvers.`,
+          id,
+        )
+        // Build recipient list: uploader + originator (deduplicated, excluding self)
+        const approvedRecipients = new Map<string, { name: string; email: string }>()
+        approvedRecipients.set(document.uploadedBy.id, { name: document.uploadedBy.name, email: document.uploadedBy.email })
+        if (document.originatorUser && document.originatorUser.id !== document.uploadedBy.id) {
+          approvedRecipients.set(document.originatorUser.id, { name: document.originatorUser.name, email: document.originatorUser.email })
+        }
+        approvedRecipients.delete(session.userId)
+        const approvedEmails: Promise<void>[] = []
+        for (const r of approvedRecipients.values()) {
+          approvedEmails.push(
+            sendDocControllerNotification({ toEmail: r.email, toName: r.name, documentTitle: document.title, documentUrl, stage: 'APPROVED' })
+              .catch((e) => console.error('[approve] approved email error:', e))
+          )
+        }
+        await Promise.all(approvedEmails)
+        emitDocStatusChange(id, document.title, 'APPROVED')
+      }
     }
     // else: other approvers still reviewing — no document status change yet
   } else {
@@ -120,26 +174,27 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       id,
     )
     const appUrl = process.env.APP_URL || 'http://localhost:3000'
-    // Await both notifications in parallel
-    await Promise.all([
-      sendOriginatorNotification({
-        toEmail: document.uploadedBy.email,
-        toName: document.uploadedBy.name,
-        documentTitle: document.title,
-        documentUrl: `${appUrl}/documents/${id}`,
-        outcome: 'REJECTED',
-        reviewerName: session.name,
-        reviewerComments: comments || null,
-      }).catch((e) => console.error('[approve] originator email error:', e)),
-      sendDocControllerNotification({
-        toEmail: document.uploadedBy.email,
-        toName: document.uploadedBy.name,
-        documentTitle: document.title,
-        documentUrl: `${appUrl}/documents/${id}`,
-        stage: 'REJECTED',
-      }).catch((e) => console.error('[approve] doc controller email error:', e)),
-    ])
+    const rejectedRecipients = new Map<string, { name: string; email: string }>()
+    rejectedRecipients.set(document.uploadedBy.id, { name: document.uploadedBy.name, email: document.uploadedBy.email })
+    if (document.originatorUser && document.originatorUser.id !== document.uploadedBy.id) {
+      rejectedRecipients.set(document.originatorUser.id, { name: document.originatorUser.name, email: document.originatorUser.email })
+    }
+    rejectedRecipients.delete(session.userId)
+    const rejectedEmails: Promise<void>[] = []
+    for (const r of rejectedRecipients.values()) {
+      rejectedEmails.push(
+        sendDocControllerNotification({ toEmail: r.email, toName: r.name, documentTitle: document.title, documentUrl: `${appUrl}/documents/${id}`, stage: 'REJECTED' })
+          .catch((e) => console.error('[approve] rejected email error:', e))
+      )
+    }
+    await Promise.all(rejectedEmails)
   }
+
+  // Real-time push
+  if (decision === 'REJECTED') {
+    emitDocStatusChange(id, document.title, 'REJECTED')
+  }
+  // The APPROVED / PENDING_AUTHORIZATION branch already emits via the authorizer activation above
 
   prisma.documentActivity.create({
     data: {

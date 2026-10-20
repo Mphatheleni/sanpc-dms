@@ -32,19 +32,24 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
   const amendRef = useRef<HTMLInputElement>(null)
 
   // ORIGINATOR is read-only — cannot submit, advance, or take any workflow action
+  // Only the ADMIN or the DC who uploaded the document can manage its workflow
   const isUploader    = session.role !== 'ORIGINATOR' &&
-    (document.uploadedById === session.userId || session.role === 'ADMIN' || session.role === 'DOCUMENT_MANAGER')
+    (document.uploadedById === session.userId || session.role === 'ADMIN')
 
   const myActiveReview = document.reviews.find(
-    (r) => !r.isApprover && r.reviewerId === session.userId && r.status === 'IN_PROGRESS'
+    (r) => !r.isApprover && !r.isAuthorizer && r.reviewerId === session.userId && r.status === 'IN_PROGRESS'
   )
   const myActiveApproval = document.reviews.find(
     (r) => r.isApprover && r.reviewerId === session.userId && r.status === 'IN_PROGRESS'
   )
+  const myActiveAuthorization = document.reviews.find(
+    (r) => r.isAuthorizer && r.reviewerId === session.userId && r.status === 'IN_PROGRESS'
+  )
 
-  // Any user assigned an active review/approval can act on it — role gates are enforced at assignment time
+  // Any user assigned an active review/approval/authorization can act on it — role gates are enforced at assignment time
   const canReview  = !!myActiveReview   && document.status === 'IN_REVIEW'
   const canApprove = !!myActiveApproval && (document.status === 'PENDING_APPROVAL' || document.status === 'FINAL_DRAFT')
+  const canAuthorize = !!myActiveAuthorization && document.status === 'PENDING_AUTHORIZATION'
   const canSubmit  =
     isUploader &&
     (document.status === 'REGISTERED' || document.status === 'DRAFT' || document.status === 'CHANGES_REQUESTED') &&
@@ -60,7 +65,7 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
   const canCancel    = (session.role === 'ADMIN' || isUploader) && !['CANCELLED', 'SUPERSEDED'].includes(document.status)
   const canSign      = (session.role === 'ADMIN' || isUploader) && ['APPROVED', 'EXCO_PENDING', 'CONTROLLED'].includes(document.status)
 
-  const activeEntry   = myActiveReview ?? myActiveApproval
+  const activeEntry   = myActiveReview ?? myActiveApproval ?? myActiveAuthorization
   const deadline      = activeEntry?.deadline ?? null
   const overdue       = isReviewOverdue(activeEntry?.startedAt ?? null, deadline)
   const deadlineLabel = getDeadlineLabel(deadline)
@@ -84,6 +89,19 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
     setLoading(decision); setError(null)
     try {
       const res = await fetch(`/api/documents/${document.id}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision, comments }),
+      })
+      if (res.ok) { onUpdate(await res.json()); setComments('') }
+      else { const d = await res.json().catch(() => ({})); setError(d.error || `Error ${res.status}`) }
+    } finally { setLoading(null) }
+  }
+
+  async function submitAuthorization(decision: string) {
+    setLoading(decision); setError(null)
+    try {
+      const res = await fetch(`/api/documents/${document.id}/authorize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ decision, comments }),
@@ -593,7 +611,7 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
     )
   }
 
-  if (!canReview && !canApprove) {
+  if (!canReview && !canApprove && !canAuthorize) {
     if (!canReplaceFile) return null
     // Uploader visiting while document is under active review or approval
     return (
@@ -629,6 +647,57 @@ export default function ReviewPanel({ document, session, onUpdate }: ReviewPanel
               Upload Replacement
             </Button>
           )}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Authorizer action panel ───────────────────────────────────────────────
+  if (canAuthorize) {
+    return (
+      <div className="rounded-xl border-2 overflow-hidden" style={{ borderColor: '#0D9488' }}>
+        <div className="px-5 py-3 flex items-center justify-between" style={{ backgroundColor: '#0D9488' }}>
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5 text-white" />
+            <span className="font-bold text-white text-sm">Your Authorization is Required</span>
+          </div>
+          {deadlineLabel && (
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${
+              overdue ? 'bg-red-500 text-white' : 'bg-amber-400 text-gray-900'
+            }`}>
+              {overdue ? <AlertTriangle className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
+              {deadlineLabel}
+            </span>
+          )}
+        </div>
+        <div className="p-5 space-y-4 bg-white">
+          {error && <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{error}</div>}
+          <Textarea
+            label="Authorization comments (optional)"
+            value={comments}
+            onChange={(e) => setComments(e.target.value)}
+            rows={3}
+            placeholder="Add authorization notes or reason for rejection…"
+          />
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => submitAuthorization('APPROVED')}
+              disabled={!!loading}
+              className="inline-flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-bold text-white transition-all disabled:opacity-60 hover:opacity-90"
+              style={{ backgroundColor: '#0D9488' }}
+            >
+              <CheckCircle className="h-4 w-4" />
+              {loading === 'APPROVED' ? 'Authorizing…' : 'Authorize'}
+            </button>
+            <button
+              onClick={() => submitAuthorization('REJECTED')}
+              disabled={!!loading}
+              className="inline-flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-bold text-white transition-all disabled:opacity-60 bg-red-600 hover:bg-red-700"
+            >
+              <XCircle className="h-4 w-4" />
+              {loading === 'REJECTED' ? 'Rejecting…' : 'Reject'}
+            </button>
+          </div>
         </div>
       </div>
     )

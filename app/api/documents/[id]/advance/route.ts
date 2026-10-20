@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { calcDeadline } from '@/lib/sla'
 import { sendBulkReviewNotificationsAsync, sendDocControllerNotification } from '@/lib/email'
 import { createNotification } from '@/lib/notify'
+import { emitDocStatusChange, emitReviewAssigned } from '@/lib/realtime'
 
 /**
  * POST /api/documents/[id]/advance
@@ -40,54 +41,79 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   }
 
   const approverReviews = document.reviews.filter((r) => r.isApprover && r.status !== 'REMOVED')
+  const authorizerReviews = document.reviews.filter((r) => r.isAuthorizer && r.status !== 'REMOVED')
 
-  if (approverReviews.length === 0) {
-    // No approvers configured — mark as fully approved
-    await prisma.document.update({ where: { id }, data: { status: 'APPROVED' } })
-  } else {
-    const now = new Date()
-    const deadline = document.reviewDeadlineDays ? calcDeadline(now, document.reviewDeadlineDays) : null
+  const now = new Date()
+  const deadline = document.reviewDeadlineDays ? calcDeadline(now, document.reviewDeadlineDays) : null
+  const appUrl = process.env.APP_URL || 'http://localhost:3000'
 
+  if (approverReviews.length > 0) {
+    // Activate approvers → FINAL_DRAFT
     const approverIds = approverReviews.map((r) => r.id)
     await prisma.$transaction([
       prisma.documentReview.updateMany({
         where: { id: { in: approverIds } },
         data: { status: 'IN_PROGRESS', startedAt: now, deadline },
       }),
-      prisma.document.update({
-        where: { id },
-        data: { status: 'FINAL_DRAFT' },
-      }),
+      prisma.document.update({ where: { id }, data: { status: 'FINAL_DRAFT' } }),
     ])
 
-    // In-app notifications for all approvers
     approverReviews.forEach((r) => {
       createNotification(
-        r.reviewer.id,
-        'REVIEW_ASSIGNED',
+        r.reviewer.id, 'REVIEW_ASSIGNED',
         `Approval Assigned: ${document.title}`,
         `${document.uploadedBy.name} requires your approval for "${document.title}".`,
         id,
       )
     })
 
-    // Email all approvers — awaited so Cloud Run doesn't cut it short
-    const appUrl = process.env.APP_URL || 'http://localhost:3000'
     try {
-      const notifications = approverReviews.map((r) => ({
-        toEmail: r.reviewer.email,
-        toName: r.reviewer.name,
+      await sendBulkReviewNotificationsAsync(approverReviews.map((r) => ({
+        toEmail: r.reviewer.email, toName: r.reviewer.name,
         documentTitle: document.title,
         documentUrl: `${appUrl}/documents/${id}`,
         sharePointUrl: document.sharePointUrl,
         deadline: deadline?.toISOString() ?? null,
         isApprover: true,
         uploaderName: document.uploadedBy.name,
-      }))
-      await sendBulkReviewNotificationsAsync(notifications)
-    } catch (err) {
-      console.error('[advance] email error:', err)
-    }
+      })))
+    } catch (err) { console.error('[advance] approver email error:', err) }
+
+  } else if (authorizerReviews.length > 0) {
+    // No approvers but authorizers exist — skip directly to authorization
+    const authorizerIds = authorizerReviews.map((r) => r.id)
+    await prisma.$transaction([
+      prisma.documentReview.updateMany({
+        where: { id: { in: authorizerIds } },
+        data: { status: 'IN_PROGRESS', startedAt: now, deadline },
+      }),
+      prisma.document.update({ where: { id }, data: { status: 'PENDING_AUTHORIZATION' } }),
+    ])
+
+    authorizerReviews.forEach((r) => {
+      createNotification(
+        r.reviewer.id, 'REVIEW_ASSIGNED',
+        `Authorization Required: ${document.title}`,
+        `${document.uploadedBy.name} requires your authorization for "${document.title}".`,
+        id,
+      )
+    })
+
+    try {
+      await sendBulkReviewNotificationsAsync(authorizerReviews.map((r) => ({
+        toEmail: r.reviewer.email, toName: r.reviewer.name,
+        documentTitle: document.title,
+        documentUrl: `${appUrl}/documents/${id}`,
+        sharePointUrl: document.sharePointUrl,
+        deadline: deadline?.toISOString() ?? null,
+        isApprover: false,
+        uploaderName: document.uploadedBy.name,
+      })))
+    } catch (err) { console.error('[advance] authorizer email error:', err) }
+
+  } else {
+    // No approvers and no authorizers — mark as directly approved
+    await prisma.document.update({ where: { id }, data: { status: 'APPROVED' } })
   }
 
   // S12: Notify Document Controller — awaited so Cloud Run doesn't kill it
@@ -117,6 +143,17 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     await Promise.all(stageMails.map((p) => p.catch((e) => console.error('[advance] stage email error:', e))))
   } catch (err) {
     console.error('[advance] doc controller email error:', err)
+  }
+
+  // Real-time: push new status + notify approvers
+  const finalStatus = approverReviews.length > 0 ? 'FINAL_DRAFT'
+    : authorizerReviews.length > 0 ? 'PENDING_AUTHORIZATION'
+    : 'APPROVED'
+  emitDocStatusChange(id, document.title, finalStatus)
+  if (approverReviews.length > 0) {
+    approverReviews.forEach((r) => emitReviewAssigned(r.reviewer.id, id, document.title))
+  } else if (authorizerReviews.length > 0) {
+    authorizerReviews.forEach((r) => emitReviewAssigned(r.reviewer.id, id, document.title))
   }
 
   const updated = await prisma.document.findUnique({

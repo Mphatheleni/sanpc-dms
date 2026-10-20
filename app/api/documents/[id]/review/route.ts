@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { calcDeadline } from '@/lib/sla'
 import { sendOriginatorNotification } from '@/lib/email'
 import { createNotification } from '@/lib/notify'
+import { emitDocStatusChange } from '@/lib/realtime'
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession()
@@ -37,16 +38,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: 'Document is not in review' }, { status: 400 })
   }
 
-  // Only reviewer-type reviews are active during IN_REVIEW
+  // Only reviewer-type reviews are active during IN_REVIEW (not approvers or authorizers)
   let myReview = document.reviews.find(
-    (r) => !r.isApprover && r.reviewerId === session.userId && r.status === 'IN_PROGRESS'
+    (r) => !r.isApprover && !r.isAuthorizer && r.reviewerId === session.userId && r.status === 'IN_PROGRESS'
   )
 
   // Fallback: if the review exists but is still PENDING (e.g. document submitted before
   // parallel activation was deployed), activate it now so the reviewer is not locked out.
   if (!myReview) {
     const pendingReview = document.reviews.find(
-      (r) => !r.isApprover && r.reviewerId === session.userId && r.status === 'PENDING'
+      (r) => !r.isApprover && !r.isAuthorizer && r.reviewerId === session.userId && r.status === 'PENDING'
     )
     if (pendingReview) {
       await prisma.documentReview.update({
@@ -73,9 +74,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       data: { status: 'APPROVED', comments, reviewedAt: now },
     })
 
-    // Check if ALL active reviewers have now approved (exclude REMOVED — they no longer count)
+    // Check if ALL active reviewers have now approved (exclude approvers, authorizers, and REMOVED)
     const pendingReviewers = document.reviews.filter(
-      (r) => !r.isApprover && r.id !== myReview.id && r.status !== 'APPROVED' && r.status !== 'REMOVED'
+      (r) => !r.isApprover && !r.isAuthorizer && r.id !== myReview.id && r.status !== 'APPROVED' && r.status !== 'REMOVED'
     )
 
     const appUrl = process.env.APP_URL || 'http://localhost:3000'
@@ -149,14 +150,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       await Promise.all(reviewerCompleteEmails.map((p) => p.catch((e) => console.error('[review] reviewer-complete email error:', e))))
     }
   } else {
-    // Rejected or changes requested — halt all other active reviewers
+    // Rejected or changes requested — halt all other active reviewers (not approvers/authorizers)
     await prisma.$transaction([
       prisma.documentReview.update({
         where: { id: myReview.id },
         data: { status: decision, comments, reviewedAt: now },
       }),
       prisma.documentReview.updateMany({
-        where: { documentId: id, isApprover: false, status: 'IN_PROGRESS', id: { not: myReview.id } },
+        where: { documentId: id, isApprover: false, isAuthorizer: false, status: 'IN_PROGRESS', id: { not: myReview.id } },
         data: { status: 'PENDING', startedAt: null },
       }),
       prisma.document.update({
@@ -205,6 +206,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       console.error('[review] email error:', err)
     }
   }
+
+  // Real-time: push updated status to all connected clients
+  const newStatusForEmit =
+    decision === 'APPROVED'
+      ? (document.reviews.filter((r) => !r.isApprover && r.id !== myReview.id && r.status !== 'APPROVED' && r.status !== 'REMOVED').length === 0
+          ? 'UPDATING' : 'IN_REVIEW')
+      : decision === 'REJECTED' ? 'REJECTED' : 'CHANGES_REQUESTED'
+  emitDocStatusChange(id, document.title, newStatusForEmit)
 
   prisma.documentActivity.create({
     data: {

@@ -1,7 +1,7 @@
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import Link from 'next/link'
-import { FileText, CheckCircle, AlertCircle, AlertTriangle, ArrowRight } from 'lucide-react'
+import { FileText, CheckCircle, AlertCircle, AlertTriangle, ArrowRight, Clock } from 'lucide-react'
 import StatsCard from '@/components/dashboard/StatsCard'
 import StatusChart from '@/components/dashboard/StatusChart'
 import StatusBadge from '@/components/documents/StatusBadge'
@@ -24,6 +24,7 @@ const roleLabels: Record<string, string> = {
   DOCUMENT_MANAGER: 'Document Controller',
   REVIEWER:         'Reviewer',
   APPROVER:         'Approver',
+  AUTHORIZER:       'Authorizer',
   ORIGINATOR:       'Originator',
 }
 
@@ -32,12 +33,13 @@ const roleColors: Record<string, { bg: string; text: string }> = {
   DOCUMENT_MANAGER: { bg: '#E8EDF4', text: '#1C3557' },
   REVIEWER:         { bg: '#EDE9FE', text: '#5B21B6' },
   APPROVER:         { bg: '#DCFCE7', text: '#166534' },
+  AUTHORIZER:       { bg: '#CCFBF1', text: '#0F766E' },
   ORIGINATOR:       { bg: '#FEF3C7', text: '#92400E' },
 }
 
 const ALL_STATUSES: DocumentStatus[] = [
   'REGISTERED', 'DRAFT', 'PENDING_REVIEW', 'IN_REVIEW', 'UPDATING', 'REVIEW_COMPLETE',
-  'FINAL_DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'CHANGES_REQUESTED', 'CONTROLLED',
+  'FINAL_DRAFT', 'PENDING_APPROVAL', 'PENDING_AUTHORIZATION', 'APPROVED', 'REJECTED', 'CHANGES_REQUESTED', 'CONTROLLED',
 ]
 
 export default async function DashboardPage() {
@@ -48,9 +50,18 @@ export default async function DashboardPage() {
   let pendingAction: { id: string; title: string; status: DocumentStatus; updatedAt: Date }[] = []
   let completedReviews: { id: string; document: { id: string; title: string; status: DocumentStatus; updatedAt: Date }; reviewedAt: Date | null }[] = []
 
-  if (session.role === 'DOCUMENT_MANAGER' || session.role === 'ADMIN') {
+  if (session.role === 'ADMIN') {
     myDocs = await prisma.document.findMany({
       where: {},
+      orderBy: { updatedAt: 'desc' },
+      take: 8,
+      select: { id: true, title: true, status: true, updatedAt: true, category: true },
+    }) as typeof myDocs
+  }
+
+  if (session.role === 'DOCUMENT_MANAGER') {
+    myDocs = await prisma.document.findMany({
+      where: { uploadedById: session.userId },
       orderBy: { updatedAt: 'desc' },
       take: 8,
       select: { id: true, title: true, status: true, updatedAt: true, category: true },
@@ -66,7 +77,7 @@ export default async function DashboardPage() {
     }) as typeof myDocs
   }
 
-  if (session.role === 'REVIEWER' || session.role === 'APPROVER') {
+  if (session.role === 'REVIEWER' || session.role === 'APPROVER' || session.role === 'AUTHORIZER') {
     myDocs = await prisma.document.findMany({
       where: { reviews: { some: { reviewerId: session.userId } } },
       orderBy: { updatedAt: 'desc' },
@@ -76,9 +87,20 @@ export default async function DashboardPage() {
   }
 
   // Document controllers need to act on docs awaiting submission, re-upload, or re-approval
-  if (session.role === 'DOCUMENT_MANAGER' || session.role === 'ADMIN') {
+  if (session.role === 'ADMIN') {
+    const dmPending = await prisma.document.findMany({
+      where: { status: { in: ['REGISTERED', 'REVIEW_COMPLETE', 'UPDATING', 'REJECTED'] } },
+      orderBy: { updatedAt: 'desc' },
+      take: 10,
+      select: { id: true, title: true, status: true, updatedAt: true },
+    }) as typeof pendingAction
+    pendingAction = [...pendingAction, ...dmPending]
+  }
+
+  if (session.role === 'DOCUMENT_MANAGER') {
     const dmPending = await prisma.document.findMany({
       where: {
+        uploadedById: session.userId,
         status: { in: ['REGISTERED', 'REVIEW_COMPLETE', 'UPDATING', 'REJECTED'] },
       },
       orderBy: { updatedAt: 'desc' },
@@ -88,11 +110,26 @@ export default async function DashboardPage() {
     pendingAction = [...pendingAction, ...dmPending]
   }
 
+  // Originator: flag docs returned for changes (need them to provide updated content to DC)
+  if (session.role === 'ORIGINATOR') {
+    const origPending = await prisma.document.findMany({
+      where: {
+        originatorId: session.userId,
+        status: { in: ['CHANGES_REQUESTED', 'REJECTED', 'UPDATING'] },
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 10,
+      select: { id: true, title: true, status: true, updatedAt: true },
+    }) as typeof pendingAction
+    pendingAction = [...pendingAction, ...origPending]
+  }
+
   if (session.role === 'REVIEWER' || session.role === 'ADMIN') {
     const reviewerDocs = await prisma.document.findMany({
       where: {
         status: 'IN_REVIEW',
-        reviews: { some: { reviewerId: session.userId, status: 'IN_PROGRESS' } },
+        // include PENDING as well — legacy safety for docs submitted before parallel activation
+        reviews: { some: { reviewerId: session.userId, status: { in: ['IN_PROGRESS', 'PENDING'] } } },
       },
       orderBy: { updatedAt: 'desc' },
       take: 10,
@@ -102,9 +139,11 @@ export default async function DashboardPage() {
   }
 
   if (session.role === 'APPROVER' || session.role === 'ADMIN') {
+    // Documents reach approvers in FINAL_DRAFT (after going through reviewers first)
+    // OR PENDING_APPROVAL (when there are no reviewers — approvers only).
     const approverDocs = await prisma.document.findMany({
       where: {
-        status: 'PENDING_APPROVAL',
+        status: { in: ['FINAL_DRAFT', 'PENDING_APPROVAL'] },
         reviews: { some: { reviewerId: session.userId, isApprover: true, status: 'IN_PROGRESS' } },
       },
       orderBy: { updatedAt: 'desc' },
@@ -114,8 +153,21 @@ export default async function DashboardPage() {
     pendingAction = [...pendingAction, ...approverDocs]
   }
 
-  // S18: Completed review/approval actions for reviewer/approver roles
-  if (session.role === 'REVIEWER' || session.role === 'APPROVER' || session.role === 'ADMIN') {
+  if (session.role === 'AUTHORIZER' || session.role === 'ADMIN') {
+    const authorizerDocs = await prisma.document.findMany({
+      where: {
+        status: 'PENDING_AUTHORIZATION',
+        reviews: { some: { reviewerId: session.userId, isAuthorizer: true, status: 'IN_PROGRESS' } },
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 10,
+      select: { id: true, title: true, status: true, updatedAt: true },
+    }) as typeof pendingAction
+    pendingAction = [...pendingAction, ...authorizerDocs]
+  }
+
+  // S18: Completed review/approval/authorization actions for reviewer/approver/authorizer roles
+  if (session.role === 'REVIEWER' || session.role === 'APPROVER' || session.role === 'AUTHORIZER' || session.role === 'ADMIN') {
     completedReviews = await prisma.documentReview.findMany({
       where: {
         reviewerId: session.userId,
@@ -129,9 +181,10 @@ export default async function DashboardPage() {
 
   // Stats
   const scopeWhere =
-    (session.role === 'ADMIN' || session.role === 'DOCUMENT_MANAGER') ? {} :
+    session.role === 'ADMIN' ? {} :
+    session.role === 'DOCUMENT_MANAGER' ? { uploadedById: session.userId } :
     session.role === 'ORIGINATOR' ? { originatorId: session.userId } :
-    (session.role === 'REVIEWER' || session.role === 'APPROVER') ? { reviews: { some: { reviewerId: session.userId } } } :
+    (session.role === 'REVIEWER' || session.role === 'APPROVER' || session.role === 'AUTHORIZER') ? { reviews: { some: { reviewerId: session.userId } } } :
     { uploadedById: session.userId }
   const totalDocs = await prisma.document.count({ where: scopeWhere })
   const approvedDocs = await prisma.document.count({ where: { ...scopeWhere, status: 'APPROVED' } })
@@ -141,7 +194,8 @@ export default async function DashboardPage() {
     where: {
       status: 'IN_PROGRESS',
       startedAt: { lt: slaDeadline },
-      ...(session.role === 'REVIEWER' ? { reviewerId: session.userId } : {}),
+      // Scope to the individual user's own reviews for reviewer/approver/authorizer roles
+      ...((session.role === 'REVIEWER' || session.role === 'APPROVER' || session.role === 'AUTHORIZER') ? { reviewerId: session.userId } : {}),
     },
   })
 
@@ -160,9 +214,10 @@ export default async function DashboardPage() {
     'Training Material', 'Form / Template',
   ]
   const categoryScope =
-    (session.role === 'ADMIN' || session.role === 'DOCUMENT_MANAGER') ? {} :
+    session.role === 'ADMIN' ? {} :
+    session.role === 'DOCUMENT_MANAGER' ? { uploadedById: session.userId } :
     session.role === 'ORIGINATOR' ? { originatorId: session.userId } :
-    (session.role === 'REVIEWER' || session.role === 'APPROVER') ? { reviews: { some: { reviewerId: session.userId } } } :
+    (session.role === 'REVIEWER' || session.role === 'APPROVER' || session.role === 'AUTHORIZER') ? { reviews: { some: { reviewerId: session.userId } } } :
     { uploadedById: session.userId }
   const categoryCounts = await Promise.all(
     docTypeCategories.map(async (cat) => ({
@@ -209,7 +264,8 @@ export default async function DashboardPage() {
           icon={FileText}
           label={
             session.role === 'ADMIN' ? 'Total Documents' :
-            (session.role === 'REVIEWER' || session.role === 'APPROVER') ? 'Assigned to Me' :
+            session.role === 'ORIGINATOR' ? 'My Originated Docs' :
+            (session.role === 'REVIEWER' || session.role === 'APPROVER' || session.role === 'AUTHORIZER') ? 'Assigned to Me' :
             'My Documents'
           }
           value={totalDocs}
@@ -283,34 +339,44 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* S18: Recently Completed Reviews */}
-      {completedReviews.length > 0 && (
+      {/* S18: Completed review / approval / authorization actions for reviewer, approver & authorizer roles */}
+      {(session.role === 'REVIEWER' || session.role === 'APPROVER' || session.role === 'AUTHORIZER' || session.role === 'ADMIN') && (
         <div className="rounded-xl border border-gray-100 bg-white shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-gray-800 flex items-center gap-2">
               <CheckCircle className="h-4 w-4 text-green-500" />
-              Recently Completed
+              {session.role === 'APPROVER' ? 'My Approval History' : session.role === 'AUTHORIZER' ? 'My Authorization History' : 'My Review History'}
             </h2>
-            <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
-              {completedReviews.length} action{completedReviews.length !== 1 ? 's' : ''}
-            </span>
+            {completedReviews.length > 0 && (
+              <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
+                {completedReviews.length} completed
+              </span>
+            )}
           </div>
-          <div className="space-y-2">
-            {completedReviews.map((review) => (
-              <Link key={review.id} href={`/documents/${review.document.id}`}>
-                <div className="flex items-center justify-between rounded-lg border border-gray-100 p-3 hover:border-green-200 hover:bg-green-50/50 transition-all group">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-gray-800 truncate">{review.document.title}</p>
-                    <p className="text-xs text-gray-400">{review.reviewedAt ? formatDate(new Date(review.reviewedAt)) : formatDate(review.document.updatedAt)}</p>
+          {completedReviews.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-32 text-gray-400">
+              <Clock className="h-8 w-8 mb-2 opacity-30" />
+              <p className="text-sm">No completed {session.role === 'APPROVER' ? 'approvals' : session.role === 'AUTHORIZER' ? 'authorizations' : 'reviews'} yet.</p>
+              <p className="text-xs mt-1 text-gray-400">Documents you {session.role === 'APPROVER' ? 'approve or reject' : session.role === 'AUTHORIZER' ? 'authorize or reject' : 'review'} will appear here.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {completedReviews.map((review) => (
+                <Link key={review.id} href={`/documents/${review.document.id}`}>
+                  <div className="flex items-center justify-between rounded-lg border border-gray-100 p-3 hover:border-green-200 hover:bg-green-50/50 transition-all group">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-800 truncate">{review.document.title}</p>
+                      <p className="text-xs text-gray-400">{review.reviewedAt ? formatDate(new Date(review.reviewedAt)) : formatDate(review.document.updatedAt)}</p>
+                    </div>
+                    <div className="flex items-center gap-2 ml-3 flex-shrink-0">
+                      <StatusBadge status={review.document.status} />
+                      <ArrowRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-green-500 transition-colors" />
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 ml-3 flex-shrink-0">
-                    <StatusBadge status={review.document.status} />
-                    <ArrowRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-green-500 transition-colors" />
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -352,15 +418,18 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {/* Recent Documents Table */}
-      {myDocs.length > 0 && (
+      {/* Documents table — always visible for reviewer/approver/originator; hidden for others when empty */}
+      {(myDocs.length > 0 || session.role === 'REVIEWER' || session.role === 'APPROVER' || session.role === 'AUTHORIZER' || session.role === 'ORIGINATOR') && (
         <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-800 flex items-center gap-2">
               <FileText className="h-4 w-4 text-sanpc-navy" />
               {
                 session.role === 'ADMIN' ? 'Recent Documents' :
-                (session.role === 'REVIEWER' || session.role === 'APPROVER') ? 'My Assigned Documents' :
+                session.role === 'APPROVER' ? 'Documents Assigned for Approval' :
+                session.role === 'AUTHORIZER' ? 'Documents Assigned for Authorization' :
+                session.role === 'REVIEWER' ? 'Documents Assigned for Review' :
+                session.role === 'ORIGINATOR' ? 'My Originated Documents' :
                 'My Recent Documents'
               }
             </h2>
@@ -372,47 +441,55 @@ export default async function DashboardPage() {
               View all <ArrowRight className="h-3 w-3" />
             </Link>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50/50">
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Document</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden sm:table-cell">Category</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Updated</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                  <th className="px-5 py-3" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {myDocs.map((doc) => (
-                  <tr key={doc.id} className="hover:bg-gray-50 transition-colors group">
-                    <td className="px-5 py-3.5">
-                      <p className="font-medium text-gray-800 truncate max-w-[200px]">{doc.title}</p>
-                    </td>
-                    <td className="px-5 py-3.5 hidden sm:table-cell">
-                      <span className="text-xs text-gray-500 truncate max-w-[120px] block">
-                        {doc.category ?? '—'}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5 hidden md:table-cell">
-                      <span className="text-xs text-gray-400">{formatDate(doc.updatedAt)}</span>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <StatusBadge status={doc.status} />
-                    </td>
-                    <td className="px-5 py-3.5 text-right">
-                      <Link
-                        href={`/documents/${doc.id}`}
-                        className="text-xs font-medium text-gray-400 group-hover:text-sanpc-navy transition-colors"
-                      >
-                        View →
-                      </Link>
-                    </td>
+          {myDocs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+              <FileText className="h-10 w-10 mb-2 opacity-20" />
+              <p className="text-sm font-medium">No documents assigned yet.</p>
+              <p className="text-xs mt-1">You will see documents here once a Document Controller assigns you to a review workflow.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50/50">
+                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Document</th>
+                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden sm:table-cell">Category</th>
+                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Updated</th>
+                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="px-5 py-3" />
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {myDocs.map((doc) => (
+                    <tr key={doc.id} className="hover:bg-gray-50 transition-colors group">
+                      <td className="px-5 py-3.5">
+                        <p className="font-medium text-gray-800 truncate max-w-[200px]">{doc.title}</p>
+                      </td>
+                      <td className="px-5 py-3.5 hidden sm:table-cell">
+                        <span className="text-xs text-gray-500 truncate max-w-[120px] block">
+                          {doc.category ?? '—'}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5 hidden md:table-cell">
+                        <span className="text-xs text-gray-400">{formatDate(doc.updatedAt)}</span>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <StatusBadge status={doc.status} />
+                      </td>
+                      <td className="px-5 py-3.5 text-right">
+                        <Link
+                          href={`/documents/${doc.id}`}
+                          className="text-xs font-medium text-gray-400 group-hover:text-sanpc-navy transition-colors"
+                        >
+                          View →
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </div>

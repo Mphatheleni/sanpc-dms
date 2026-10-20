@@ -13,6 +13,7 @@ const statusConfig: Record<
   REVIEW_COMPLETE: { label: 'Review Complete', variant: 'warning' },
   FINAL_DRAFT: { label: 'Final Draft', variant: 'secondary' },
   PENDING_APPROVAL: { label: 'Pending Approval', variant: 'secondary' },
+  PENDING_AUTHORIZATION: { label: 'Pending Authorization', variant: 'secondary' },
   APPROVED: { label: 'Approved', variant: 'success' },
   REJECTED: { label: 'Rejected', variant: 'danger' },
   CHANGES_REQUESTED: { label: 'Changes Requested', variant: 'warning' },

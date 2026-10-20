@@ -28,8 +28,7 @@ export async function POST(
 
   const canManage =
     document.uploadedById === session.userId ||
-    session.role === 'ADMIN' ||
-    session.role === 'DOCUMENT_MANAGER'
+    session.role === 'ADMIN'
   if (!canManage) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const terminalStatuses = ['APPROVED', 'CONTROLLED', 'SUPERSEDED', 'CANCELLED']

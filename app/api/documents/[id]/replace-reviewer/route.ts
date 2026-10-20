@@ -28,11 +28,10 @@ export async function POST(
 
   if (!document) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  // Only uploader, ADMIN, or DOCUMENT_MANAGER can replace reviewers
+  // Only the document owner or ADMIN can replace reviewers
   const canManage =
     document.uploadedById === session.userId ||
-    session.role === 'ADMIN' ||
-    session.role === 'DOCUMENT_MANAGER'
+    session.role === 'ADMIN'
   if (!canManage) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const terminalStatuses = ['APPROVED', 'CONTROLLED', 'SUPERSEDED', 'CANCELLED']

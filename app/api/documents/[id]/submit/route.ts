@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { calcDeadline } from '@/lib/sla'
 import { sendBulkReviewNotificationsAsync, sendApproverHeadsUpEmail, sendDocControllerNotification } from '@/lib/email'
 import { createNotification } from '@/lib/notify'
+import { emitDocStatusChange, emitReviewAssigned } from '@/lib/realtime'
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession()
@@ -41,8 +42,9 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: 'No reviewers or approvers assigned' }, { status: 400 })
   }
 
-  const reviewerReviews = document.reviews.filter((r) => !r.isApprover && r.status !== 'REMOVED')
+  const reviewerReviews = document.reviews.filter((r) => !r.isApprover && !r.isAuthorizer && r.status !== 'REMOVED')
   const approverReviews = document.reviews.filter((r) => r.isApprover && r.status !== 'REMOVED')
+  const authorizerReviews = document.reviews.filter((r) => r.isAuthorizer && r.status !== 'REMOVED')
 
   const now = new Date()
   let newVersion = document.version
@@ -73,11 +75,16 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     data: { status: 'PENDING', startedAt: null, reviewedAt: null, comments: null, deadline: null },
   })
 
-  // Which group to activate first
+  // Activate the first group in priority order: reviewers → approvers → authorizers
   const activateReviewers = reviewerReviews.length > 0
-  const groupToActivate = activateReviewers ? reviewerReviews : approverReviews
+  const activateApprovers = !activateReviewers && approverReviews.length > 0
+  const groupToActivate = activateReviewers ? reviewerReviews
+    : activateApprovers ? approverReviews
+    : authorizerReviews
   const activateIds = groupToActivate.map((r) => r.id)
-  const newDocStatus = activateReviewers ? 'IN_REVIEW' : 'PENDING_APPROVAL'
+  const newDocStatus: string = activateReviewers ? 'IN_REVIEW'
+    : activateApprovers ? 'PENDING_APPROVAL'
+    : 'PENDING_AUTHORIZATION'
 
   // Activate all members of the first group with startedAt + deadline (use explicit IDs)
   await prisma.$transaction([
@@ -112,7 +119,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       documentUrl: `${appUrl}/documents/${id}`,
       sharePointUrl: document.sharePointUrl,
       deadline: deadline?.toISOString() ?? null,
-      isApprover: !activateReviewers,
+      isApprover: activateApprovers,
       uploaderName: session.name,
     }))
     await sendBulkReviewNotificationsAsync(notifications)
@@ -162,6 +169,10 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   }
 
   await Promise.all(secondaryEmails.map((p) => p.catch((e) => console.error('[submit] secondary email error:', e))))
+
+  // Real-time: broadcast status change + notify each assigned reviewer/approver
+  emitDocStatusChange(id, document.title, newDocStatus)
+  groupToActivate.forEach((r) => emitReviewAssigned(r.reviewer.id, id, document.title))
 
   prisma.documentActivity.create({
     data: {

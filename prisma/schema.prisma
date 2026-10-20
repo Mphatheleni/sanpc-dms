@@ -111,6 +111,7 @@ model DocumentReview {
   reviewerId     String
   order          Int
   isApprover     Boolean      @default(false)
+  isAuthorizer   Boolean      @default(false)
   isMandatory    Boolean      @default(false)
   mandatoryRole  String?
   status         ReviewStatus @default(PENDING)
@@ -178,6 +179,7 @@ enum Role {
   DOCUMENT_MANAGER
   REVIEWER
   APPROVER
+  AUTHORIZER
   ORIGINATOR
 }
 
@@ -190,6 +192,7 @@ enum DocumentStatus {
   REVIEW_COMPLETE
   FINAL_DRAFT
   PENDING_APPROVAL
+  PENDING_AUTHORIZATION
   APPROVED
   EXCO_PENDING
   CONTROLLED
@@ -228,4 +231,5 @@ enum ActivityAction {
   ATTACHMENT_ADDED
   ATTACHMENT_REMOVED
   STATUS_CHANGED
+  AUTHORIZED
 }

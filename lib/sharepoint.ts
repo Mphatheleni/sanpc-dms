@@ -107,8 +107,15 @@ export async function uploadToSharePoint(
       },
       body: chunk,
     })
-    if (chunkRes.status === 200 || chunkRes.status === 201) {
+    if (chunkRes.status === 202) {
+      // Intermediate chunk accepted — consume body to release the connection
+      await chunkRes.json().catch(() => chunkRes.text().catch(() => null))
+    } else if (chunkRes.status === 200 || chunkRes.status === 201) {
+      // Final chunk — DriveItem returned
       finalItem = await chunkRes.json()
+    } else {
+      const errorBody = await chunkRes.text().catch(() => '(unreadable)')
+      throw new Error(`SharePoint chunk upload failed (${chunkRes.status}) at bytes ${start}-${end - 1}: ${errorBody}`)
     }
     start = end
   }
@@ -200,8 +207,13 @@ export async function replaceFileInSharePoint(
       },
       body: chunk,
     })
-    if (chunkRes.status === 200 || chunkRes.status === 201) {
+    if (chunkRes.status === 202) {
+      await chunkRes.json().catch(() => chunkRes.text().catch(() => null))
+    } else if (chunkRes.status === 200 || chunkRes.status === 201) {
       finalItem = await chunkRes.json()
+    } else {
+      const errorBody = await chunkRes.text().catch(() => '(unreadable)')
+      throw new Error(`SharePoint replace chunk failed (${chunkRes.status}) at bytes ${start}-${end - 1}: ${errorBody}`)
     }
     start = end
   }

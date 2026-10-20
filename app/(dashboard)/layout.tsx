@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth'
 import Sidebar from '@/components/layout/Sidebar'
 import Header from '@/components/layout/Header'
 import { Toaster } from '@/components/ui/sonner'
+import RealtimeProvider from '@/components/providers/RealtimeProvider'
 import type { SessionUser } from '@/types'
 
 export default async function DashboardLayout({
@@ -28,6 +29,8 @@ export default async function DashboardLayout({
         <main className="min-h-0 flex-1 overflow-y-auto p-6">{children}</main>
       </div>
       <Toaster position="top-right" />
+      {/* Invisible component — holds SSE connection, fires toasts, calls router.refresh() */}
+      <RealtimeProvider userId={session.userId} role={session.role} />
     </div>
   )
 }

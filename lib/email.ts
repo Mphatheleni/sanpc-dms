@@ -71,75 +71,170 @@ async function sendViaGraph(
   console.log(`[email] sent via Graph from ${sender} to ${toEmail}`)
 }
 
-/* ── HTML helpers ────────────────────────────────────────────────────────── */
+/* ── HTML helpers ─────────────────────────────────────────────────────────── */
 
-function deadlineHtml(deadline: string | null | undefined): string {
-  if (!deadline) return ''
-  const d = new Date(deadline).toLocaleDateString('en-ZA', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-  })
-  return `<tr><td style="padding:4px 0;color:#6b7280;font-size:13px;">Review deadline</td>
-           <td style="padding:4px 0;font-weight:600;color:#EF4444;">${d}</td></tr>`
+/**
+ * Shared outer wrapper — table-based structure renders correctly in Outlook.
+ * MSO conditional comments fix width/centering; VML is used for buttons.
+ */
+function wrapEmail(content: string): string {
+  return `<!DOCTYPE html>
+<html lang="en" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="x-apple-disable-message-reformatting">
+  <!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:AllowPNG/><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]-->
+</head>
+<body style="margin:0;padding:0;background-color:#edf0f5;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+  bgcolor="#edf0f5" style="background-color:#edf0f5;">
+  <tr>
+    <td align="center" valign="top" style="padding:36px 16px;">
+      <!--[if (gte mso 9)|(IE)]><table role="presentation" align="center" width="600" cellpadding="0" cellspacing="0"><tr><td><![endif]-->
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+        style="max-width:600px;background-color:#ffffff;">
+
+        <!-- ─── HEADER ────────────────────────────────────────── -->
+        <tr>
+          <td bgcolor="#1C3557" style="background-color:#1C3557;padding:26px 36px 22px;">
+            <p style="margin:0;font-size:22px;font-weight:800;color:#ffffff;
+              font-family:Arial,Helvetica,sans-serif;letter-spacing:-0.3px;line-height:1.2;">SANPC DMS</p>
+            <p style="margin:5px 0 0;font-size:10px;font-weight:700;color:#F5A623;
+              font-family:Arial,Helvetica,sans-serif;letter-spacing:0.18em;text-transform:uppercase;">
+              Powering Your Tomorrow
+            </p>
+          </td>
+        </tr>
+
+        <!-- ─── GOLD ACCENT STRIPE ────────────────────────────── -->
+        <tr>
+          <td bgcolor="#F5A623" height="4"
+            style="background-color:#F5A623;height:4px;line-height:4px;font-size:1px;">&nbsp;</td>
+        </tr>
+
+        <!-- ─── BODY ──────────────────────────────────────────── -->
+        <tr>
+          <td style="padding:36px 36px 32px;background-color:#ffffff;">
+            ${content}
+          </td>
+        </tr>
+
+        <!-- ─── FOOTER ───────────────────────────────────────── -->
+        <tr>
+          <td bgcolor="#f5f7fa" style="background-color:#f5f7fa;padding:20px 36px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="border-top:1px solid #e0e4ea;padding-top:16px;">
+                  <p style="margin:0;font-size:11px;color:#9ca3af;
+                    font-family:Arial,Helvetica,sans-serif;line-height:1.7;">
+                    This is an automated notification from
+                    <strong style="color:#6b7280;">SANPC DMS</strong>.
+                    Please do not reply to this email.
+                    If you need assistance, contact your Document Controller.
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+      </table>
+      <!--[if (gte mso 9)|(IE)]></td></tr></table><![endif]-->
+    </td>
+  </tr>
+</table>
+</body>
+</html>`
 }
 
+/**
+ * Outlook-compatible CTA button.
+ * Outlook uses VML (Vector Markup Language) for rounded buttons.
+ * All other clients (Gmail, Apple Mail, web) use the standard <a> tag.
+ */
 function btn(href: string, label: string, bg: string, fg: string): string {
-  return `<a href="${href}" style="display:inline-block;margin:8px 6px 0 0;padding:10px 22px;
-    background:${bg};color:${fg};font-weight:700;font-size:14px;border-radius:8px;
-    text-decoration:none;">${label}</a>`
+  return `<!--[if mso]>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:8px;"><tr><td>
+  <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
+    href="${href}" style="height:44px;v-text-anchor:middle;width:252px;" arcsize="15%" stroke="f" fillcolor="${bg}">
+    <w:anchorlock/>
+    <center style="color:${fg};font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:bold;">${label}</center>
+  </v:roundrect>
+</td></tr></table>
+<![endif]-->
+<!--[if !mso]><!-->
+<a href="${href}" target="_blank"
+  style="display:inline-block;margin-top:8px;padding:13px 26px;background-color:${bg};
+    color:${fg};font-weight:700;font-size:14px;border-radius:8px;text-decoration:none;
+    font-family:Arial,Helvetica,sans-serif;">
+  ${label}
+</a>
+<!--<![endif]-->`
 }
 
-function buildHtml({
-  toName, documentTitle, documentUrl, reviewUrl, sharePointUrl, deadline, isApprover, uploaderName, isReminder,
-}: ReviewEmailProps): string {
-  const role = isApprover ? 'approve' : 'review'
-  const actionLabel = isApprover ? '✅ Approve / Reject Document' : '✅ Mark Review Complete'
-  const primaryUrl = reviewUrl || documentUrl
+/** Document info card — table-based for reliable Outlook rendering */
+function infoCard(docTitle: string, rows: Array<[string, string]> = []): string {
+  const rowsHtml = rows.map(([label, value]) => `
+    <tr>
+      <td width="148" valign="top"
+        style="padding:5px 16px 5px 0;font-size:12px;color:#9ca3af;
+          font-family:Arial,Helvetica,sans-serif;white-space:nowrap;">${label}</td>
+      <td valign="top"
+        style="padding:5px 0;font-size:13px;color:#374151;
+          font-family:Arial,Helvetica,sans-serif;font-weight:600;">${value}</td>
+    </tr>`).join('')
 
-  return `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:0;">
-  <div style="max-width:600px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;
-    box-shadow:0 2px 8px rgba(0,0,0,.08);">
-    <div style="background:#1C3557;padding:28px 32px;">
-      <div style="font-size:22px;font-weight:800;color:#fff;letter-spacing:-0.3px;">SANPC DMS</div>
-      <div style="font-size:11px;font-weight:600;letter-spacing:.18em;color:#F5A623;margin-top:2px;">
-        POWERING YOUR TOMORROW
-      </div>
-    </div>
-    <div style="padding:32px;">
-      ${isReminder ? `<div style="background:#FEF3C7;border-left:4px solid #F59E0B;border-radius:6px;padding:10px 16px;margin-bottom:20px;">
-        <div style="font-size:13px;font-weight:700;color:#92400E;">⏰ Reminder — Action Required</div>
-        <div style="font-size:12px;color:#78350F;margin-top:2px;">This is a reminder. Your review has been pending for 18 days.</div>
-      </div>` : ''}
-      <p style="margin:0 0 8px;font-size:16px;color:#374151;">Dear <strong>${toName}</strong>,</p>
-      <p style="margin:0 0 20px;font-size:15px;color:#374151;">
-        You have been assigned to <strong>${role}</strong> the following document:
-      </p>
-      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;margin-bottom:20px;">
-        <div style="font-size:17px;font-weight:700;color:#1C3557;margin-bottom:12px;">${documentTitle}</div>
-        <table style="border-collapse:collapse;width:100%;">
-          <tr><td style="padding:4px 0;color:#6b7280;font-size:13px;">Uploaded by</td>
-              <td style="padding:4px 0;font-size:13px;">${uploaderName}</td></tr>
-          ${deadlineHtml(deadline)}
-        </table>
-      </div>
-      <p style="margin:0 0 12px;font-size:14px;color:#374151;font-weight:600;">How to complete your ${role}:</p>
-      <ol style="margin:0 0 20px;padding-left:20px;font-size:14px;color:#374151;line-height:2;">
-        <li>Click the button below and sign in with your Microsoft account.</li>
-        <li>Preview the document and use the Review panel to record your formal decision.</li>
-      </ol>
-      <div style="margin-bottom:16px;">
-        ${btn(primaryUrl, actionLabel, '#1C3557', '#fff')}
-      </div>
-      <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0 16px;" />
-      <p style="margin:0;font-size:12px;color:#9ca3af;">
-        If you cannot access the document, contact the Document Controller.
-        Automated notification from SANPC DMS.
-      </p>
-    </div>
-  </div>
-</body></html>`
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+  bgcolor="#f9fafb"
+  style="background-color:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:24px;">
+  <tr>
+    <td style="padding:18px 20px;">
+      <p style="margin:0 0 ${rowsHtml ? '12' : '0'}px;font-size:17px;font-weight:700;color:#1C3557;
+        font-family:Arial,Helvetica,sans-serif;line-height:1.3;">${docTitle}</p>
+      ${rowsHtml
+        ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${rowsHtml}</table>`
+        : ''}
+    </td>
+  </tr>
+</table>`
 }
 
-/* ── Public interfaces ───────────────────────────────────────────────────── */
+/** Coloured status/alert banner with left border accent */
+function banner(title: string, message: string, color: string, bg: string): string {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+  style="margin-bottom:24px;">
+  <tr>
+    <td bgcolor="${bg}"
+      style="background-color:${bg};padding:14px 18px;border-left:4px solid ${color};">
+      <p style="margin:0 0 ${message ? '4' : '0'}px;font-size:14px;font-weight:700;
+        color:${color};font-family:Arial,Helvetica,sans-serif;">${title}</p>
+      ${message
+        ? `<p style="margin:0;font-size:13px;color:#374151;
+             font-family:Arial,Helvetica,sans-serif;line-height:1.5;">${message}</p>`
+        : ''}
+    </td>
+  </tr>
+</table>`
+}
+
+/** Two-column numbered step list — uses table cells for Outlook compatibility */
+function steps(items: string[]): string {
+  const rows = items.map((item, i) => `
+    <tr>
+      <td width="22" valign="top"
+        style="padding:3px 10px 3px 0;font-size:13px;font-weight:700;color:#1C3557;
+          font-family:Arial,Helvetica,sans-serif;">${i + 1}.</td>
+      <td valign="top"
+        style="padding:3px 0;font-size:13px;color:#374151;
+          font-family:Arial,Helvetica,sans-serif;line-height:1.7;">${item}</td>
+    </tr>`).join('')
+
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+  style="margin-bottom:24px;">${rows}</table>`
+}
+
+/* ── Review / Approval notification ──────────────────────────────────────── */
 
 export interface ReviewEmailProps {
   toEmail: string
@@ -154,6 +249,53 @@ export interface ReviewEmailProps {
   isReminder?: boolean
 }
 
+function buildHtml({
+  toName, documentTitle, documentUrl, reviewUrl, deadline, isApprover, uploaderName, isReminder,
+}: ReviewEmailProps): string {
+  const role = isApprover ? 'approve' : 'review'
+  const actionLabel = isApprover ? 'Open Document for Approval' : 'Open Document for Review'
+  const primaryUrl = reviewUrl || documentUrl
+
+  const deadlineRow: Array<[string, string]> = deadline
+    ? [[
+        'Review deadline',
+        `<span style="color:#EF4444;font-weight:700;">${
+          new Date(deadline).toLocaleDateString('en-ZA', {
+            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+          })
+        }</span>`,
+      ]]
+    : []
+
+  const content = `
+    ${isReminder ? banner(
+      'Reminder — Action Still Required',
+      'This is a follow-up reminder. Your review has been pending for 18 days.',
+      '#92400E', '#FEF3C7',
+    ) : ''}
+    <p style="margin:0 0 6px;font-size:16px;color:#374151;font-family:Arial,Helvetica,sans-serif;">
+      Dear <strong>${toName}</strong>,
+    </p>
+    <p style="margin:0 0 24px;font-size:14px;color:#374151;
+      font-family:Arial,Helvetica,sans-serif;line-height:1.7;">
+      You have been assigned to <strong>${role}</strong> the following document.
+      Please open it in SANPC DMS and record your formal decision.
+    </p>
+    ${infoCard(documentTitle, [['Submitted by', uploaderName], ...deadlineRow])}
+    <p style="margin:0 0 10px;font-size:13px;font-weight:700;color:#374151;
+      font-family:Arial,Helvetica,sans-serif;">
+      How to complete your ${role}:
+    </p>
+    ${steps([
+      'Click the button below and sign in with your Microsoft account.',
+      'Preview the document and use the Review panel to record your formal decision.',
+    ])}
+    ${btn(primaryUrl, actionLabel, '#1C3557', '#ffffff')}
+  `
+
+  return wrapEmail(content)
+}
+
 export async function sendReviewNotification(props: ReviewEmailProps): Promise<void> {
   if (!isEmailConfigured()) {
     console.log(`[email] not configured — would send to ${props.toEmail}`)
@@ -161,7 +303,7 @@ export async function sendReviewNotification(props: ReviewEmailProps): Promise<v
     console.log(`  Review URL: ${props.reviewUrl}`)
     return
   }
-  const reminderPrefix = props.isReminder ? '⏰ REMINDER: ' : ''
+  const reminderPrefix = props.isReminder ? 'REMINDER: ' : ''
   const subject = `[SANPC DMS] ${reminderPrefix}${props.isApprover ? 'Approval' : 'Review'} Required: ${props.documentTitle}`
   await sendViaGraph(props.toEmail, props.toName, subject, buildHtml(props))
 }
@@ -185,6 +327,8 @@ export async function sendBulkReviewNotificationsAsync(notifications: ReviewEmai
   )
 }
 
+/* ── Originator outcome notification ─────────────────────────────────────── */
+
 export type OriginatorOutcome = 'CHANGES_REQUESTED' | 'REJECTED' | 'APPROVED' | 'REVIEW_COMPLETE' | 'REVIEWER_COMPLETE'
 
 interface OriginatorEmailProps {
@@ -199,41 +343,53 @@ interface OriginatorEmailProps {
 
 function buildOriginatorHtml(p: OriginatorEmailProps): string {
   const outcomeConfig = {
-    APPROVED:           { label: 'Approved',             color: '#16A34A', bg: '#F0FDF4', message: 'Your document has been fully approved.' },
-    REVIEW_COMPLETE:    { label: 'All Reviews Complete',  color: '#1C3557', bg: '#E8EDF4', message: 'All reviewers have completed their review. Please check annotations in Office 365, make any final edits, then send for approval.' },
-    REVIEWER_COMPLETE:  { label: 'Review Submitted',      color: '#7C3AED', bg: '#F5F3FF', message: 'A reviewer has submitted their review. Check the document for comments and annotations.' },
-    CHANGES_REQUESTED:  { label: 'Changes Requested',    color: '#D97706', bg: '#FFFBEB', message: 'A reviewer has requested changes. Please update the document and resubmit.' },
-    REJECTED:           { label: 'Rejected',              color: '#DC2626', bg: '#FEF2F2', message: 'Your document has been rejected. Please review the comments and resubmit if appropriate.' },
+    APPROVED:          { label: 'Document Approved',          color: '#16A34A', bg: '#F0FDF4',
+      message: 'Your document has been fully approved.' },
+    REVIEW_COMPLETE:   { label: 'All Reviews Complete',        color: '#1C3557', bg: '#E8EDF4',
+      message: 'All reviewers have completed their review. Please check annotations in Office 365, make any final edits, then send for approval.' },
+    REVIEWER_COMPLETE: { label: 'Review Submitted',            color: '#7C3AED', bg: '#F5F3FF',
+      message: 'A reviewer has submitted their review. Check the document for comments and annotations.' },
+    CHANGES_REQUESTED: { label: 'Changes Requested',          color: '#D97706', bg: '#FFFBEB',
+      message: 'A reviewer has requested changes. Please update the document and resubmit.' },
+    REJECTED:          { label: 'Document Rejected',           color: '#DC2626', bg: '#FEF2F2',
+      message: 'Your document has been rejected. Please review the comments and resubmit if appropriate.' },
   }[p.outcome]
 
-  return `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:0;">
-  <div style="max-width:600px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;
-    box-shadow:0 2px 8px rgba(0,0,0,.08);">
-    <div style="background:#1C3557;padding:28px 32px;">
-      <div style="font-size:22px;font-weight:800;color:#fff;">SANPC DMS</div>
-      <div style="font-size:11px;font-weight:600;letter-spacing:.18em;color:#F5A623;margin-top:2px;">POWERING YOUR TOMORROW</div>
-    </div>
-    <div style="padding:32px;">
-      <div style="background:${outcomeConfig.bg};border-left:4px solid ${outcomeConfig.color};border-radius:6px;padding:14px 18px;margin-bottom:24px;">
-        <div style="font-size:15px;font-weight:700;color:${outcomeConfig.color};">${outcomeConfig.label}</div>
-        <div style="font-size:13px;color:#374151;margin-top:4px;">${outcomeConfig.message}</div>
-      </div>
-      <p style="margin:0 0 8px;font-size:15px;color:#374151;">Dear <strong>${p.toName}</strong>,</p>
-      <p style="margin:0 0 16px;font-size:14px;color:#374151;">
-        <strong>${p.reviewerName}</strong> has reviewed <strong>${p.documentTitle}</strong>
-        and recorded the decision: <strong style="color:${outcomeConfig.color};">${outcomeConfig.label}</strong>.
-      </p>
-      ${p.reviewerComments ? `
-      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 18px;margin-bottom:20px;">
-        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#9ca3af;margin-bottom:6px;">Reviewer comments</div>
-        <div style="font-size:14px;color:#374151;font-style:italic;">"${p.reviewerComments}"</div>
-      </div>` : ''}
-      ${btn(p.documentUrl, 'View Document in SANPC DMS', '#1C3557', '#fff')}
-      <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0 16px;" />
-      <p style="margin:0;font-size:12px;color:#9ca3af;">Automated notification from SANPC DMS.</p>
-    </div>
-  </div>
-</body></html>`
+  const commentsBlock = p.reviewerComments
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+        style="margin-bottom:24px;">
+        <tr>
+          <td bgcolor="#f9fafb" style="background-color:#f9fafb;border:1px solid #e5e7eb;
+            border-radius:8px;padding:16px 18px;">
+            <p style="margin:0 0 6px;font-size:11px;font-weight:700;letter-spacing:0.08em;
+              text-transform:uppercase;color:#9ca3af;font-family:Arial,Helvetica,sans-serif;">
+              Reviewer comments
+            </p>
+            <p style="margin:0;font-size:14px;color:#374151;font-style:italic;
+              font-family:Arial,Helvetica,sans-serif;line-height:1.6;">
+              &ldquo;${p.reviewerComments}&rdquo;
+            </p>
+          </td>
+        </tr>
+      </table>`
+    : ''
+
+  const content = `
+    ${banner(outcomeConfig.label, outcomeConfig.message, outcomeConfig.color, outcomeConfig.bg)}
+    <p style="margin:0 0 6px;font-size:16px;color:#374151;font-family:Arial,Helvetica,sans-serif;">
+      Dear <strong>${p.toName}</strong>,
+    </p>
+    <p style="margin:0 0 24px;font-size:14px;color:#374151;
+      font-family:Arial,Helvetica,sans-serif;line-height:1.7;">
+      <strong>${p.reviewerName}</strong> has reviewed
+      <strong>${p.documentTitle}</strong> and recorded the decision:
+      <strong style="color:${outcomeConfig.color};">${outcomeConfig.label}</strong>.
+    </p>
+    ${commentsBlock}
+    ${btn(p.documentUrl, 'View Document in SANPC DMS', '#1C3557', '#ffffff')}
+  `
+
+  return wrapEmail(content)
 }
 
 export async function sendOriginatorNotification(props: OriginatorEmailProps): Promise<void> {
@@ -242,16 +398,16 @@ export async function sendOriginatorNotification(props: OriginatorEmailProps): P
     return
   }
   const subjectMap = {
-    APPROVED:           `[SANPC DMS] Approved: ${props.documentTitle}`,
-    REVIEW_COMPLETE:    `[SANPC DMS] All Reviews Complete — Action Required: ${props.documentTitle}`,
-    REVIEWER_COMPLETE:  `[SANPC DMS] Review Submitted by ${props.reviewerName}: ${props.documentTitle}`,
-    CHANGES_REQUESTED:  `[SANPC DMS] Changes Requested: ${props.documentTitle}`,
-    REJECTED:           `[SANPC DMS] Rejected: ${props.documentTitle}`,
+    APPROVED:          `[SANPC DMS] Approved: ${props.documentTitle}`,
+    REVIEW_COMPLETE:   `[SANPC DMS] All Reviews Complete — Action Required: ${props.documentTitle}`,
+    REVIEWER_COMPLETE: `[SANPC DMS] Review Submitted by ${props.reviewerName}: ${props.documentTitle}`,
+    CHANGES_REQUESTED: `[SANPC DMS] Changes Requested: ${props.documentTitle}`,
+    REJECTED:          `[SANPC DMS] Rejected: ${props.documentTitle}`,
   }
   await sendViaGraph(props.toEmail, props.toName, subjectMap[props.outcome], buildOriginatorHtml(props))
 }
 
-/* ── S8: Reviewer removed notification ──────────────────────────────────── */
+/* ── Reviewer removed notification ───────────────────────────────────────── */
 
 export async function sendReviewerRemovedEmail(props: {
   toEmail: string
@@ -263,32 +419,33 @@ export async function sendReviewerRemovedEmail(props: {
     console.log(`[email] not configured — would notify removed reviewer ${props.toEmail}`)
     return
   }
-  const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:0;">
-  <div style="max-width:600px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;
-    box-shadow:0 2px 8px rgba(0,0,0,.08);">
-    <div style="background:#1C3557;padding:28px 32px;">
-      <div style="font-size:22px;font-weight:800;color:#fff;">SANPC DMS</div>
-      <div style="font-size:11px;font-weight:600;letter-spacing:.18em;color:#F5A623;margin-top:2px;">POWERING YOUR TOMORROW</div>
-    </div>
-    <div style="padding:32px;">
-      <p style="margin:0 0 16px;font-size:15px;color:#374151;">Dear <strong>${props.toName}</strong>,</p>
-      <p style="margin:0 0 16px;font-size:14px;color:#374151;">
-        You have been <strong>removed from the review workflow</strong> for the following document:
-      </p>
-      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;margin-bottom:20px;">
-        <div style="font-size:17px;font-weight:700;color:#1C3557;">${props.documentTitle}</div>
-      </div>
-      <p style="margin:0 0 16px;font-size:14px;color:#374151;">No further action is required from you on this document.</p>
-      ${btn(props.documentUrl, 'View Document', '#1C3557', '#fff')}
-      <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0 16px;" />
-      <p style="margin:0;font-size:12px;color:#9ca3af;">Automated notification from SANPC DMS.</p>
-    </div>
-  </div>
-</body></html>`
-  await sendViaGraph(props.toEmail, props.toName, `[SANPC DMS] Removed from review: ${props.documentTitle}`, html)
+
+  const content = `
+    ${banner(
+      'You have been removed from a review workflow',
+      'No further action is required from you on this document.',
+      '#6B7280', '#F9FAFB',
+    )}
+    <p style="margin:0 0 6px;font-size:16px;color:#374151;font-family:Arial,Helvetica,sans-serif;">
+      Dear <strong>${props.toName}</strong>,
+    </p>
+    <p style="margin:0 0 24px;font-size:14px;color:#374151;
+      font-family:Arial,Helvetica,sans-serif;line-height:1.7;">
+      You have been removed from the review workflow for the following document.
+      You do not need to take any further action.
+    </p>
+    ${infoCard(props.documentTitle)}
+    ${btn(props.documentUrl, 'View Document', '#1C3557', '#ffffff')}
+  `
+
+  await sendViaGraph(
+    props.toEmail, props.toName,
+    `[SANPC DMS] Removed from review: ${props.documentTitle}`,
+    wrapEmail(content),
+  )
 }
 
-/* ── S11: Approver heads-up when document submitted for review ──────────── */
+/* ── Approver heads-up when document submitted for review ─────────────────── */
 
 export async function sendApproverHeadsUpEmail(props: {
   toEmail: string
@@ -301,38 +458,36 @@ export async function sendApproverHeadsUpEmail(props: {
     console.log(`[email] not configured — would send approver heads-up to ${props.toEmail}`)
     return
   }
-  const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:0;">
-  <div style="max-width:600px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;
-    box-shadow:0 2px 8px rgba(0,0,0,.08);">
-    <div style="background:#1C3557;padding:28px 32px;">
-      <div style="font-size:22px;font-weight:800;color:#fff;">SANPC DMS</div>
-      <div style="font-size:11px;font-weight:600;letter-spacing:.18em;color:#F5A623;margin-top:2px;">POWERING YOUR TOMORROW</div>
-    </div>
-    <div style="padding:32px;">
-      <div style="background:#E8EDF4;border-left:4px solid #1C3557;border-radius:6px;padding:14px 18px;margin-bottom:24px;">
-        <div style="font-size:14px;font-weight:700;color:#1C3557;">For Your Information — Document Submitted for Review</div>
-        <div style="font-size:13px;color:#374151;margin-top:4px;">You will be notified when this document reaches the approval stage.</div>
-      </div>
-      <p style="margin:0 0 8px;font-size:15px;color:#374151;">Dear <strong>${props.toName}</strong>,</p>
-      <p style="margin:0 0 16px;font-size:14px;color:#374151;">
-        <strong>${props.uploaderName}</strong> has submitted the following document for review.
-        Once all reviewers have completed their review, you will receive a separate notification to approve it.
-      </p>
-      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;margin-bottom:20px;">
-        <div style="font-size:17px;font-weight:700;color:#1C3557;">${props.documentTitle}</div>
-      </div>
-      ${btn(props.documentUrl, 'View Document in SANPC DMS', '#1C3557', '#fff')}
-      <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0 16px;" />
-      <p style="margin:0;font-size:12px;color:#9ca3af;">Automated notification from SANPC DMS.</p>
-    </div>
-  </div>
-</body></html>`
-  await sendViaGraph(props.toEmail, props.toName, `[SANPC DMS] FYI — Under Review: ${props.documentTitle}`, html)
+
+  const content = `
+    ${banner(
+      'For Your Information — Document Submitted for Review',
+      'You will be notified when this document reaches the approval stage.',
+      '#1C3557', '#E8EDF4',
+    )}
+    <p style="margin:0 0 6px;font-size:16px;color:#374151;font-family:Arial,Helvetica,sans-serif;">
+      Dear <strong>${props.toName}</strong>,
+    </p>
+    <p style="margin:0 0 24px;font-size:14px;color:#374151;
+      font-family:Arial,Helvetica,sans-serif;line-height:1.7;">
+      <strong>${props.uploaderName}</strong> has submitted the following document for review.
+      Once all reviewers have completed their review, you will receive a separate email
+      asking you to formally approve it.
+    </p>
+    ${infoCard(props.documentTitle)}
+    ${btn(props.documentUrl, 'View Document in SANPC DMS', '#1C3557', '#ffffff')}
+  `
+
+  await sendViaGraph(
+    props.toEmail, props.toName,
+    `[SANPC DMS] FYI — Under Review: ${props.documentTitle}`,
+    wrapEmail(content),
+  )
 }
 
-/* ── S12: Document Controller stage notifications ───────────────────────── */
+/* ── Document Controller stage notifications ──────────────────────────────── */
 
-export type DocControllerStage = 'SUBMITTED' | 'IN_APPROVAL' | 'APPROVED' | 'REJECTED'
+export type DocControllerStage = 'SUBMITTED' | 'IN_APPROVAL' | 'AUTHORIZED' | 'APPROVED' | 'REJECTED'
 
 export async function sendDocControllerNotification(props: {
   toEmail: string
@@ -345,6 +500,7 @@ export async function sendDocControllerNotification(props: {
     console.log(`[email] not configured — would send doc controller notification to ${props.toEmail} stage=${props.stage}`)
     return
   }
+
   const stageConfig: Record<DocControllerStage, { label: string; color: string; bg: string; body: string }> = {
     SUBMITTED:   {
       label: 'Review Workflow Started',
@@ -355,6 +511,11 @@ export async function sendDocControllerNotification(props: {
       label: 'Sent for Approval',
       color: '#7C3AED', bg: '#F5F3FF',
       body: 'All reviewers have completed their review. The document has been sent to the approvers for formal sign-off. You will be notified when a final approval decision is made.',
+    },
+    AUTHORIZED:  {
+      label: 'Document Authorized',
+      color: '#0D9488', bg: '#F0FDFA',
+      body: 'All approvers have formally approved this document and all authorizers have given their final sign-off. You may now publish it by marking it as Controlled in the SANPC DMS.',
     },
     APPROVED:    {
       label: 'Document Approved',
@@ -367,40 +528,32 @@ export async function sendDocControllerNotification(props: {
       body: 'This document has been rejected. Please open it in the SANPC DMS to review the feedback, coordinate with the Originator to address the comments, and resubmit when ready.',
     },
   }
-  const cfg = stageConfig[props.stage]
+
   const subjectMap: Record<DocControllerStage, string> = {
     SUBMITTED:   `[SANPC DMS] Workflow Started: ${props.documentTitle}`,
     IN_APPROVAL: `[SANPC DMS] Sent for Approval: ${props.documentTitle}`,
+    AUTHORIZED:  `[SANPC DMS] Authorized — Action Required: ${props.documentTitle}`,
     APPROVED:    `[SANPC DMS] Approved — Action Required: ${props.documentTitle}`,
     REJECTED:    `[SANPC DMS] Rejected: ${props.documentTitle}`,
   }
-  const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:0;">
-  <div style="max-width:600px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;
-    box-shadow:0 2px 8px rgba(0,0,0,.08);">
-    <div style="background:#1C3557;padding:28px 32px;">
-      <div style="font-size:22px;font-weight:800;color:#fff;">SANPC DMS</div>
-      <div style="font-size:11px;font-weight:600;letter-spacing:.18em;color:#F5A623;margin-top:2px;">POWERING YOUR TOMORROW</div>
-    </div>
-    <div style="padding:32px;">
-      <div style="background:${cfg.bg};border-left:4px solid ${cfg.color};border-radius:6px;padding:14px 18px;margin-bottom:24px;">
-        <div style="font-size:15px;font-weight:700;color:${cfg.color};">${cfg.label}</div>
-      </div>
-      <p style="margin:0 0 8px;font-size:15px;color:#374151;">Dear <strong>${props.toName}</strong>,</p>
-      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 18px;margin-bottom:16px;">
-        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#9ca3af;margin-bottom:4px;">Document</div>
-        <div style="font-size:16px;font-weight:700;color:#1C3557;">${props.documentTitle}</div>
-      </div>
-      <p style="margin:0 0 20px;font-size:14px;color:#374151;line-height:1.6;">${cfg.body}</p>
-      ${btn(props.documentUrl, 'Open in SANPC DMS', cfg.color, '#fff')}
-      <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0 16px;" />
-      <p style="margin:0;font-size:12px;color:#9ca3af;">Automated notification from SANPC DMS.</p>
-    </div>
-  </div>
-</body></html>`
-  await sendViaGraph(props.toEmail, props.toName, subjectMap[props.stage], html)
+
+  const cfg = stageConfig[props.stage]
+
+  const content = `
+    ${banner(cfg.label, '', cfg.color, cfg.bg)}
+    <p style="margin:0 0 6px;font-size:16px;color:#374151;font-family:Arial,Helvetica,sans-serif;">
+      Dear <strong>${props.toName}</strong>,
+    </p>
+    ${infoCard(props.documentTitle)}
+    <p style="margin:0 0 28px;font-size:14px;color:#374151;
+      font-family:Arial,Helvetica,sans-serif;line-height:1.7;">${cfg.body}</p>
+    ${btn(props.documentUrl, 'Open in SANPC DMS', cfg.color, '#ffffff')}
+  `
+
+  await sendViaGraph(props.toEmail, props.toName, subjectMap[props.stage], wrapEmail(content))
 }
 
-/* ── Review deadline expired — notify DC and originator ─────────────────── */
+/* ── Review deadline expired ──────────────────────────────────────────────── */
 
 export async function sendDeadlineExpiredEmail(props: {
   toEmail: string
@@ -413,35 +566,28 @@ export async function sendDeadlineExpiredEmail(props: {
     console.log(`[email] not configured — would send deadline-expired notice to ${props.toEmail}`)
     return
   }
+
   const message = props.isDC
     ? 'The 21-day review window has closed. The document has been returned to Changes Requested — please coordinate with the Originator to update and resubmit.'
     : 'The 21-day review window for this document has closed. The document has been returned to you for updates. Please revise and resubmit when ready.'
-  const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:0;">
-  <div style="max-width:600px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;
-    box-shadow:0 2px 8px rgba(0,0,0,.08);">
-    <div style="background:#1C3557;padding:28px 32px;">
-      <div style="font-size:22px;font-weight:800;color:#fff;">SANPC DMS</div>
-      <div style="font-size:11px;font-weight:600;letter-spacing:.18em;color:#F5A623;margin-top:2px;">POWERING YOUR TOMORROW</div>
-    </div>
-    <div style="padding:32px;">
-      <div style="background:#FEF3C7;border-left:4px solid #D97706;border-radius:6px;padding:14px 18px;margin-bottom:24px;">
-        <div style="font-size:15px;font-weight:700;color:#92400E;">⏰ Review Deadline Expired</div>
-        <div style="font-size:13px;color:#78350F;margin-top:4px;">${message}</div>
-      </div>
-      <p style="margin:0 0 8px;font-size:15px;color:#374151;">Dear <strong>${props.toName}</strong>,</p>
-      <p style="margin:0 0 16px;font-size:14px;color:#374151;">
-        Document: <strong>${props.documentTitle}</strong>
-      </p>
-      ${btn(props.documentUrl, 'View Document in SANPC DMS', '#1C3557', '#fff')}
-      <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0 16px;" />
-      <p style="margin:0;font-size:12px;color:#9ca3af;">Automated notification from SANPC DMS.</p>
-    </div>
-  </div>
-</body></html>`
-  await sendViaGraph(props.toEmail, props.toName, `[SANPC DMS] Review Deadline Expired: ${props.documentTitle}`, html)
+
+  const content = `
+    ${banner('Review Deadline Expired', message, '#92400E', '#FEF3C7')}
+    <p style="margin:0 0 6px;font-size:16px;color:#374151;font-family:Arial,Helvetica,sans-serif;">
+      Dear <strong>${props.toName}</strong>,
+    </p>
+    ${infoCard(props.documentTitle)}
+    ${btn(props.documentUrl, 'View Document in SANPC DMS', '#1C3557', '#ffffff')}
+  `
+
+  await sendViaGraph(
+    props.toEmail, props.toName,
+    `[SANPC DMS] Review Deadline Expired: ${props.documentTitle}`,
+    wrapEmail(content),
+  )
 }
 
-/* ── Document file replaced — notify active reviewers/approvers ─────────── */
+/* ── Document file replaced — notify active reviewers/approvers ───────────── */
 
 export async function sendDocumentUpdatedEmail(props: {
   toEmail: string
@@ -455,45 +601,58 @@ export async function sendDocumentUpdatedEmail(props: {
     console.log(`[email] not configured — would send document-updated notice to ${props.toEmail}`)
     return
   }
-  const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:0;">
-  <div style="max-width:600px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;
-    box-shadow:0 2px 8px rgba(0,0,0,.08);">
-    <div style="background:#1C3557;padding:28px 32px;">
-      <div style="font-size:22px;font-weight:800;color:#fff;">SANPC DMS</div>
-      <div style="font-size:11px;font-weight:600;letter-spacing:.18em;color:#F5A623;margin-top:2px;">POWERING YOUR TOMORROW</div>
-    </div>
-    <div style="padding:32px;">
-      <div style="background:#FEF3C7;border-left:4px solid #F59E0B;border-radius:6px;padding:14px 18px;margin-bottom:24px;">
-        <div style="font-size:15px;font-weight:700;color:#92400E;">📄 Document Updated — New Version Available</div>
-        <div style="font-size:13px;color:#78350F;margin-top:4px;">
-          A new version of this document has been uploaded. Please review the updated file.
-        </div>
-      </div>
-      <p style="margin:0 0 8px;font-size:15px;color:#374151;">Dear <strong>${props.toName}</strong>,</p>
-      <p style="margin:0 0 16px;font-size:14px;color:#374151;">
-        <strong>${props.uploaderName}</strong> has uploaded a new version of the following document.
-        Please use the updated file for your review — your existing review link remains valid.
-      </p>
-      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;margin-bottom:20px;">
-        <div style="font-size:17px;font-weight:700;color:#1C3557;">${props.documentTitle}</div>
-      </div>
-      ${btn(props.documentUrl, 'View Updated Document in SANPC DMS', '#1C3557', '#fff')}
-      <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0 16px;" />
-      <p style="margin:0;font-size:12px;color:#9ca3af;">Automated notification from SANPC DMS.</p>
-    </div>
-  </div>
-</body></html>`
-  await sendViaGraph(props.toEmail, props.toName, `[SANPC DMS] Document Updated: ${props.documentTitle}`, html)
+
+  const content = `
+    ${banner(
+      'New Version Available — Please Review Updated File',
+      'A new version has been uploaded. Please use the updated file for your review — your existing review link remains valid.',
+      '#92400E', '#FEF3C7',
+    )}
+    <p style="margin:0 0 6px;font-size:16px;color:#374151;font-family:Arial,Helvetica,sans-serif;">
+      Dear <strong>${props.toName}</strong>,
+    </p>
+    <p style="margin:0 0 24px;font-size:14px;color:#374151;
+      font-family:Arial,Helvetica,sans-serif;line-height:1.7;">
+      <strong>${props.uploaderName}</strong> has uploaded a new version of the following document.
+    </p>
+    ${infoCard(props.documentTitle)}
+    ${btn(props.documentUrl, 'View Updated Document', '#1C3557', '#ffffff')}
+  `
+
+  await sendViaGraph(
+    props.toEmail, props.toName,
+    `[SANPC DMS] Document Updated: ${props.documentTitle}`,
+    wrapEmail(content),
+  )
 }
 
-/* ── Manual status change notification (CONTROLLED, SUPERSEDED, CANCELLED etc) ── */
+/* ── Manual status change notification ───────────────────────────────────── */
 
 const STATUS_EMAIL_CONFIG: Record<string, { label: string; color: string; bg: string; message: string }> = {
-  CONTROLLED:  { label: 'Document Controlled',  color: '#16A34A', bg: '#F0FDF4', message: 'Your document has been officially controlled and published to the document repository.' },
-  SUPERSEDED:  { label: 'Document Superseded',  color: '#6B7280', bg: '#F9FAFB', message: 'Your document has been superseded by a newer revision and is no longer the current version.' },
-  CANCELLED:   { label: 'Document Cancelled',   color: '#DC2626', bg: '#FEF2F2', message: 'Your document has been cancelled by the Document Controller.' },
-  APPROVED:    { label: 'Document Approved',    color: '#16A34A', bg: '#F0FDF4', message: 'Your document has been approved by the Document Controller.' },
-  REJECTED:    { label: 'Document Rejected',    color: '#DC2626', bg: '#FEF2F2', message: 'Your document has been rejected by the Document Controller.' },
+  IN_REVIEW:              { label: 'Document Sent for Review',        color: '#1C3557', bg: '#E8EDF4',
+    message: 'Your document has been submitted for review. The assigned reviewers have been notified and will record their decisions.' },
+  PENDING_REVIEW:         { label: 'Document Pending Review',         color: '#1C3557', bg: '#E8EDF4',
+    message: 'Your document is queued for review.' },
+  UPDATING:               { label: 'Review Complete — Action Required', color: '#D97706', bg: '#FFFBEB',
+    message: 'All reviewers have completed their review. The Document Controller will coordinate any final edits before sending for approval.' },
+  CHANGES_REQUESTED:      { label: 'Changes Requested',               color: '#D97706', bg: '#FFFBEB',
+    message: 'Changes have been requested on your document. Please review the reviewer comments and provide an updated version to the Document Controller.' },
+  FINAL_DRAFT:            { label: 'Document Sent for Approval',      color: '#7C3AED', bg: '#F5F3FF',
+    message: 'Your document has been sent to the approvers for formal sign-off. You will be notified once a decision is made.' },
+  PENDING_APPROVAL:       { label: 'Document Pending Approval',       color: '#7C3AED', bg: '#F5F3FF',
+    message: 'Your document is awaiting formal approval.' },
+  PENDING_AUTHORIZATION:  { label: 'Document Sent for Authorization', color: '#0D9488', bg: '#F0FDFA',
+    message: 'All approvers have signed off. Your document has been sent to the authorizer(s) for final sign-off.' },
+  APPROVED:               { label: 'Document Approved',               color: '#16A34A', bg: '#F0FDF4',
+    message: 'Your document has been fully approved.' },
+  CONTROLLED:             { label: 'Document Controlled',             color: '#16A34A', bg: '#F0FDF4',
+    message: 'Your document has been officially controlled and published to the document repository.' },
+  SUPERSEDED:             { label: 'Document Superseded',             color: '#6B7280', bg: '#F9FAFB',
+    message: 'Your document has been superseded by a newer revision and is no longer the current version.' },
+  CANCELLED:              { label: 'Document Cancelled',              color: '#DC2626', bg: '#FEF2F2',
+    message: 'Your document has been cancelled by the Document Controller.' },
+  REJECTED:               { label: 'Document Rejected',               color: '#DC2626', bg: '#FEF2F2',
+    message: 'Your document has been rejected. Please review the comments and resubmit with the necessary changes.' },
 }
 
 export async function sendStatusChangeEmail(props: {
@@ -508,33 +667,88 @@ export async function sendStatusChangeEmail(props: {
     console.log(`[email] not configured — would send status-change notice (${props.newStatus}) to ${props.toEmail}`)
     return
   }
+
   const cfg = STATUS_EMAIL_CONFIG[props.newStatus]
-  if (!cfg) return // no email for this status
-  const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:0;">
-  <div style="max-width:600px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;
-    box-shadow:0 2px 8px rgba(0,0,0,.08);">
-    <div style="background:#1C3557;padding:28px 32px;">
-      <div style="font-size:22px;font-weight:800;color:#fff;">SANPC DMS</div>
-      <div style="font-size:11px;font-weight:600;letter-spacing:.18em;color:#F5A623;margin-top:2px;">POWERING YOUR TOMORROW</div>
-    </div>
-    <div style="padding:32px;">
-      <div style="background:${cfg.bg};border-left:4px solid ${cfg.color};border-radius:6px;padding:14px 18px;margin-bottom:24px;">
-        <div style="font-size:15px;font-weight:700;color:${cfg.color};">${cfg.label}</div>
-        <div style="font-size:13px;color:#374151;margin-top:4px;">${cfg.message}</div>
-      </div>
-      <p style="margin:0 0 8px;font-size:15px;color:#374151;">Dear <strong>${props.toName}</strong>,</p>
-      <p style="margin:0 0 16px;font-size:14px;color:#374151;">
-        Document: <strong>${props.documentTitle}</strong>
-      </p>
-      ${props.reason ? `<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 18px;margin-bottom:20px;">
-        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#9ca3af;margin-bottom:6px;">Reason</div>
-        <div style="font-size:14px;color:#374151;">${props.reason}</div>
-      </div>` : ''}
-      ${btn(props.documentUrl, 'View Document in SANPC DMS', cfg.color, '#fff')}
-      <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0 16px;" />
-      <p style="margin:0;font-size:12px;color:#9ca3af;">Automated notification from SANPC DMS.</p>
-    </div>
-  </div>
-</body></html>`
-  await sendViaGraph(props.toEmail, props.toName, `[SANPC DMS] ${cfg.label}: ${props.documentTitle}`, html)
+  if (!cfg) return
+
+  const reasonBlock = props.reason
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+        style="margin-bottom:24px;">
+        <tr>
+          <td bgcolor="#f9fafb" style="background-color:#f9fafb;border:1px solid #e5e7eb;
+            border-radius:8px;padding:16px 18px;">
+            <p style="margin:0 0 6px;font-size:11px;font-weight:700;letter-spacing:0.08em;
+              text-transform:uppercase;color:#9ca3af;font-family:Arial,Helvetica,sans-serif;">
+              Reason
+            </p>
+            <p style="margin:0;font-size:14px;color:#374151;
+              font-family:Arial,Helvetica,sans-serif;line-height:1.6;">${props.reason}</p>
+          </td>
+        </tr>
+      </table>`
+    : ''
+
+  const content = `
+    ${banner(cfg.label, cfg.message, cfg.color, cfg.bg)}
+    <p style="margin:0 0 6px;font-size:16px;color:#374151;font-family:Arial,Helvetica,sans-serif;">
+      Dear <strong>${props.toName}</strong>,
+    </p>
+    ${infoCard(props.documentTitle)}
+    ${reasonBlock}
+    ${btn(props.documentUrl, 'View Document in SANPC DMS', cfg.color, '#ffffff')}
+  `
+
+  await sendViaGraph(
+    props.toEmail, props.toName,
+    `[SANPC DMS] ${cfg.label}: ${props.documentTitle}`,
+    wrapEmail(content),
+  )
+}
+
+// ── Role change notification ───────────────────────────────────────────────
+
+export async function sendRoleChangedEmail(props: {
+  toEmail: string
+  toName: string
+  newRole: string
+  newRoleLabel: string
+  appUrl: string
+}): Promise<void> {
+  if (!isEmailConfigured()) {
+    console.log(`[email] not configured — would send role-change email to ${props.toEmail} (${props.newRoleLabel})`)
+    return
+  }
+
+  const content = `
+    ${banner('Your Account Role Has Been Updated', '', '#1C3557', '#E8EDF4')}
+    <p style="margin:0 0 16px;font-size:16px;color:#374151;font-family:Arial,Helvetica,sans-serif;">
+      Dear <strong>${props.toName}</strong>,
+    </p>
+    <p style="margin:0 0 24px;font-size:14px;color:#374151;font-family:Arial,Helvetica,sans-serif;line-height:1.6;">
+      Your account role in the SANPC Document Management System has been updated by an administrator.
+    </p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+      style="margin-bottom:24px;">
+      <tr>
+        <td bgcolor="#f0fdf4"
+          style="background-color:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px 18px;">
+          <p style="margin:0 0 4px;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;
+            color:#9ca3af;font-family:Arial,Helvetica,sans-serif;">New Role</p>
+          <p style="margin:0;font-size:20px;font-weight:700;color:#166534;
+            font-family:Arial,Helvetica,sans-serif;">${props.newRoleLabel}</p>
+        </td>
+      </tr>
+    </table>
+    <p style="margin:0 0 24px;font-size:14px;color:#374151;font-family:Arial,Helvetica,sans-serif;line-height:1.6;">
+      Your permissions have been updated accordingly. If you believe this change was made in error,
+      please contact your system administrator.
+    </p>
+    ${btn(props.appUrl, 'Open SANPC DMS', '#1C3557', '#ffffff')}
+  `
+
+  await sendViaGraph(
+    props.toEmail, props.toName,
+    `[SANPC DMS] Your account role has been updated to ${props.newRoleLabel}`,
+    wrapEmail(content),
+  )
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { emitDocCreated } from '@/lib/realtime'
 
 const docInclude = {
   uploadedBy: { select: { id: true, name: true, email: true, role: true } },
@@ -81,7 +82,7 @@ export async function POST(request: NextRequest) {
     title, description, category, tags,
     storedName, fileName, fileType, fileSize,
     sharePointUrl, sharePointItemId, reviewDeadlineDays,
-    reviewers, approvers, metadata,
+    reviewers, approvers, authorizers, metadata,
     documentNumber, documentTypeCode, revision, originator, authorisedBy, purpose,
     originatorId, originatorEmail, originatorName,
     authorizerId, authorizerEmail, authorizerName,
@@ -131,26 +132,36 @@ export async function POST(request: NextRequest) {
     const u = await prisma.user.upsert({
       where: { email: authorizerEmail.toLowerCase().trim() },
       update: {},
-      create: { name: authorizerName ?? authorizerEmail, email: authorizerEmail.toLowerCase().trim(), role: 'APPROVER', password: '' },
+      create: { name: authorizerName ?? authorizerEmail, email: authorizerEmail.toLowerCase().trim(), role: 'AUTHORIZER', password: '' },
     })
     resolvedAuthorizerId = u.id
   }
 
-  // Build all review records: reviewers first (isApprover=false), then approvers (isApprover=true)
+  // Build all review records: reviewers first, then approvers, then authorizers
   const reviewerList: { userId: string; email?: string; name?: string; order: number }[] = reviewers ?? []
   const approverList: { userId: string; email?: string; name?: string; order: number }[] = approvers ?? []
+  const authorizerList: { userId: string; email?: string; name?: string; order: number }[] = authorizers ?? []
 
   const reviewRecords = [
     ...await Promise.all(reviewerList.map(async (r) => ({
       reviewerId: await resolveId(r),
       order: r.order,
       isApprover: false,
+      isAuthorizer: false,
       status: 'PENDING' as const,
     }))),
     ...await Promise.all(approverList.map(async (a) => ({
       reviewerId: await resolveId(a),
       order: a.order,
       isApprover: true,
+      isAuthorizer: false,
+      status: 'PENDING' as const,
+    }))),
+    ...await Promise.all(authorizerList.map(async (a) => ({
+      reviewerId: await resolveId(a),
+      order: a.order,
+      isApprover: false,
+      isAuthorizer: true,
       status: 'PENDING' as const,
     }))),
   ]
@@ -192,6 +203,9 @@ export async function POST(request: NextRequest) {
   prisma.documentActivity.create({
     data: { documentId: document.id, userId: session.userId, action: 'CREATED' },
   }).catch(() => {})
+
+  // Push real-time event to all admins + document controllers so their lists update instantly
+  emitDocCreated(document.id, document.title)
 
   return NextResponse.json(document, { status: 201 })
 }

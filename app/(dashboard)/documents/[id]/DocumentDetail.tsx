@@ -14,6 +14,7 @@ import StatusBadge from '@/components/documents/StatusBadge'
 import MetadataList from '@/components/documents/MetadataList'
 import CommentThread from '@/components/documents/CommentThread'
 import ReviewPanel from '@/components/documents/ReviewPanel'
+import WorkflowPipeline from '@/components/documents/WorkflowPipeline'
 import DocumentViewer from '@/components/documents/DocumentViewer'
 import ActivityLog from '@/components/documents/ActivityLog'
 import VersionHistory from '@/components/documents/VersionHistory'
@@ -61,8 +62,8 @@ type Tab = typeof TABS[number]
 // DLT-10: all selectable statuses for manual change
 const ALL_STATUSES = [
   'REGISTERED', 'DRAFT', 'PENDING_REVIEW', 'IN_REVIEW', 'UPDATING',
-  'REVIEW_COMPLETE', 'FINAL_DRAFT', 'PENDING_APPROVAL', 'APPROVED',
-  'EXCO_PENDING', 'CONTROLLED', 'SUPERSEDED', 'CANCELLED',
+  'REVIEW_COMPLETE', 'FINAL_DRAFT', 'PENDING_APPROVAL', 'PENDING_AUTHORIZATION',
+  'APPROVED', 'EXCO_PENDING', 'CONTROLLED', 'SUPERSEDED', 'CANCELLED',
   'REJECTED', 'CHANGES_REQUESTED',
 ] as const
 
@@ -132,7 +133,7 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
   const [replaceTarget, setReplaceTarget] = useState<{ reviewId: string; isApprover: boolean } | null>(null)
   const [replaceUser, setReplaceUser] = useState<PickableUser | null>(null)
   const [replacing, setReplacing] = useState(false)
-  const [addTarget, setAddTarget] = useState<{ isApprover: boolean } | null>(null)
+  const [addTarget, setAddTarget] = useState<{ isApprover: boolean; isAuthorizer?: boolean } | null>(null)
   const [addUser, setAddUser] = useState<PickableUser | null>(null)
   const [adding, setAdding] = useState(false)
   const [removeTarget, setRemoveTarget] = useState<string | null>(null)
@@ -186,13 +187,14 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
     return () => document.removeEventListener('mousedown', handleOutside)
   }, [statusMenuOpen])
 
-  // ORIGINATOR is read-only — they can view everything but cannot manage
+  // Only the ADMIN or the DC who uploaded the document can manage its workflow/reviewers
+  const isDocOwner = doc.uploadedById === session.userId
   const canManage =
     session.role === 'ADMIN' ||
-    session.role === 'DOCUMENT_MANAGER' ||
-    (doc.uploadedById === session.userId && session.role !== 'ORIGINATOR')
+    (isDocOwner && session.role !== 'ORIGINATOR')
 
-  const isDocumentController = session.role === 'ADMIN' || session.role === 'DOCUMENT_MANAGER'
+  const isDocumentController = session.role === 'ADMIN' ||
+    (session.role === 'DOCUMENT_MANAGER' && isDocOwner)
 
   async function handleReplaceReviewer() {
     if (!replaceTarget || !replaceUser) return
@@ -227,8 +229,8 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
           addUser.id
-            ? { newReviewerId: addUser.id, isApprover: addTarget.isApprover }
-            : { newReviewerEmail: addUser.email, newReviewerName: addUser.name, isApprover: addTarget.isApprover }
+            ? { newReviewerId: addUser.id, isApprover: addTarget.isApprover, isAuthorizer: addTarget.isAuthorizer ?? false }
+            : { newReviewerEmail: addUser.email, newReviewerName: addUser.name, isApprover: addTarget.isApprover, isAuthorizer: addTarget.isAuthorizer ?? false }
         ),
       })
       if (res.ok) {
@@ -327,7 +329,7 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
   }
 
   // Render parallel review group — plain function, NOT a React component, to avoid unmount issues
-  function renderReviewGroup(reviews: typeof doc.reviews, label: string, isApproverGroup: boolean) {
+  function renderReviewGroup(reviews: typeof doc.reviews, label: string, isApproverGroup: boolean, isAuthorizerGroup = false) {
     // Exclude REMOVED from the progress count — only count active participants
     const active = reviews.filter((r) => r.status !== 'REMOVED')
     const approved = active.filter((r) => r.status === 'APPROVED').length
@@ -351,11 +353,11 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
             {canManage && (
               <button
                 type="button"
-                onClick={() => { setAddTarget({ isApprover: isApproverGroup }); setAddUser(null); setReplaceTarget(null); setRemoveTarget(null) }}
+                onClick={() => { setAddTarget({ isApprover: isApproverGroup, isAuthorizer: isAuthorizerGroup }); setAddUser(null); setReplaceTarget(null); setRemoveTarget(null) }}
                 className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 transition-colors"
               >
                 <UserCheck className="h-3 w-3" />
-                Add {isApproverGroup ? 'Approver' : 'Reviewer'}
+                Add {isAuthorizerGroup ? 'Authorizer' : isApproverGroup ? 'Approver' : 'Reviewer'}
               </button>
             )}
           </div>
@@ -527,12 +529,12 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
           })}
         </div>
 
-        {/* Add reviewer/approver inline panel — opens when header button clicked */}
-        {canManage && addTarget?.isApprover === isApproverGroup && (
+        {/* Add reviewer/approver/authorizer inline panel — opens when header button clicked */}
+        {canManage && addTarget?.isApprover === isApproverGroup && (addTarget?.isAuthorizer ?? false) === isAuthorizerGroup && (
           <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 space-y-2">
             <div className="flex items-center gap-2">
               <UserCheck className="h-4 w-4 text-amber-600 flex-shrink-0" />
-              <span className="text-xs font-semibold text-amber-800">Add {isApproverGroup ? 'approver' : 'reviewer'}:</span>
+              <span className="text-xs font-semibold text-amber-800">Add {isAuthorizerGroup ? 'authorizer' : isApproverGroup ? 'approver' : 'reviewer'}:</span>
             </div>
             <div className="flex items-end gap-2 flex-wrap">
               <div className="flex-1 min-w-[220px]">
@@ -564,8 +566,9 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
     )
   }
 
-  const reviewerSteps = doc.reviews.filter((r) => !r.isApprover)
+  const reviewerSteps = doc.reviews.filter((r) => !r.isApprover && !r.isAuthorizer)
   const approverSteps = doc.reviews.filter((r) => r.isApprover)
+  const authorizerSteps = doc.reviews.filter((r) => r.isAuthorizer)
 
   const tabLabels: Record<Tab, string> = {
     Overview: 'Overview',
@@ -700,6 +703,9 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
           </div>
         </div>
       </div>
+
+      {/* Workflow pipeline — visible to all; especially useful for Originators tracking progress */}
+      <WorkflowPipeline status={doc.status} />
 
       {/* Tab bar */}
       <div className="border-b border-gray-200">
@@ -961,6 +967,22 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
                     </div>
                   </div>
                 )}
+                {authorizerSteps.length > 0 && (
+                  <div className="flex items-start gap-2">
+                    <ShieldCheck className="h-4 w-4 text-teal-500 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <dt className="text-xs text-gray-500">Authorizers</dt>
+                      <dd className="text-gray-800 space-y-0.5">
+                        {authorizerSteps.map((r, i) => (
+                          <div key={r.id} className="flex items-center gap-1.5">
+                            <span className="text-xs text-gray-400">#{i + 1}</span>
+                            <span>{r.reviewer.name}</span>
+                          </div>
+                        ))}
+                      </dd>
+                    </div>
+                  </div>
+                )}
               </dl>
             </Card>
 
@@ -1097,6 +1119,40 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
                         ))}
                       </>
                     )}
+
+                    {/* ── Authorizers section ── */}
+                    {authorizerSteps.length > 0 && (
+                      <>
+                        <tr>
+                          <td colSpan={5} className="bg-teal-50 py-1.5 pl-2">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-teal-700">Authorizers</span>
+                          </td>
+                        </tr>
+                        {authorizerSteps.map((r, i) => (
+                          <tr key={r.id} className={`hover:bg-gray-50 ${r.status === 'REMOVED' ? 'opacity-50' : ''}`}>
+                            <td className="py-2 pr-4 text-gray-400 text-xs">{i + 1}</td>
+                            <td className="py-2 pr-4 font-medium text-gray-800">
+                              <span className={r.status === 'REMOVED' ? 'line-through text-gray-400' : ''}>{r.reviewer.name}</span>
+                            </td>
+                            <td className="py-2 pr-4 text-gray-500 text-xs">Authorizer</td>
+                            <td className="py-2 pr-4">
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                                r.status === 'REMOVED' ? 'bg-gray-100 text-gray-400' :
+                                r.status === 'APPROVED' ? 'bg-teal-100 text-teal-700' :
+                                r.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
+                                r.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
+                                'bg-gray-100 text-gray-500'
+                              }`}>
+                                {r.status === 'REMOVED' ? 'Removed' : r.status === 'APPROVED' ? 'Authorized' : r.status.replace('_', ' ')}
+                              </span>
+                            </td>
+                            <td className="py-2 text-gray-400 text-xs">
+                              {r.status === 'REMOVED' ? '—' : r.reviewedAt ? new Date(r.reviewedAt).toLocaleDateString('en-ZA') : r.startedAt ? 'In progress' : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -1107,13 +1163,18 @@ export default function DocumentDetail({ initialDoc, session, users = [] }: Prop
             <Card>
               <h2 className="font-semibold text-gray-800 mb-4">Review Workflow</h2>
               {reviewerSteps.length > 0 && (
-                <div className={approverSteps.length > 0 ? 'mb-5' : ''}>
+                <div className={approverSteps.length > 0 || authorizerSteps.length > 0 ? 'mb-5' : ''}>
                   {renderReviewGroup(reviewerSteps, 'Reviewers', false)}
                 </div>
               )}
               {approverSteps.length > 0 && (
-                <div className={reviewerSteps.length > 0 ? 'border-t pt-5' : ''}>
+                <div className={reviewerSteps.length > 0 ? 'border-t pt-5' : ''} style={authorizerSteps.length > 0 ? { marginBottom: '1.25rem' } : {}}>
                   {renderReviewGroup(approverSteps, 'Approvers', true)}
+                </div>
+              )}
+              {authorizerSteps.length > 0 && (
+                <div className={reviewerSteps.length > 0 || approverSteps.length > 0 ? 'border-t pt-5' : ''}>
+                  {renderReviewGroup(authorizerSteps, 'Authorizers', false, true)}
                 </div>
               )}
             </Card>

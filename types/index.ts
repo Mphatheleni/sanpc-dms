@@ -1,4 +1,4 @@
-export type Role = 'ADMIN' | 'DOCUMENT_MANAGER' | 'REVIEWER' | 'APPROVER' | 'ORIGINATOR'
+export type Role = 'ADMIN' | 'DOCUMENT_MANAGER' | 'REVIEWER' | 'APPROVER' | 'AUTHORIZER' | 'ORIGINATOR'
 
 export type DocumentStatus =
   | 'REGISTERED'
@@ -9,6 +9,7 @@ export type DocumentStatus =
   | 'REVIEW_COMPLETE'
   | 'FINAL_DRAFT'
   | 'PENDING_APPROVAL'
+  | 'PENDING_AUTHORIZATION'
   | 'APPROVED'
   | 'EXCO_PENDING'
   | 'CONTROLLED'
@@ -45,6 +46,7 @@ export type ActivityAction =
   | 'ATTACHMENT_ADDED'
   | 'ATTACHMENT_REMOVED'
   | 'STATUS_CHANGED'
+  | 'AUTHORIZED'
 
 export interface User {
   id: string
@@ -154,6 +156,7 @@ export interface DocumentReview {
   reviewer: User
   order: number
   isApprover: boolean
+  isAuthorizer: boolean
   isMandatory: boolean
   mandatoryRole: string | null
   status: ReviewStatus

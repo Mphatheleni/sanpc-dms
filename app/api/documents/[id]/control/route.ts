@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { createNotification } from '@/lib/notify'
+import { sendStatusChangeEmail } from '@/lib/email'
+import { emitDocStatusChange } from '@/lib/realtime'
 
 const docInclude = {
   uploadedBy: { select: { id: true, name: true, email: true, role: true } },
@@ -40,13 +42,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     select: {
       id: true, title: true, status: true, uploadedById: true, documentTypeCode: true, isExcoRequired: true,
       documentNumber: true,
-      uploadedBy: { select: { id: true, name: true } },
+      uploadedBy: { select: { id: true, name: true, email: true } },
+      originatorUser: { select: { id: true, name: true, email: true } },
     },
   })
 
   if (!document) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const canAct = session.role === 'ADMIN' || session.role === 'DOCUMENT_MANAGER' || document.uploadedById === session.userId
+  const canAct = session.role === 'ADMIN' || document.uploadedById === session.userId
   if (!canAct) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   // Validate allowed transitions
@@ -132,21 +135,56 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     ] : []),
   ])
 
-  // Notify the uploader if the action was by someone else
+  // In-app notify the uploader if the action was by someone else
   if (document.uploadedById !== session.userId) {
     const labels: Record<string, string> = {
       CONTROLLED: 'marked as Controlled',
       SUPERSEDED: 'marked as Superseded',
       CANCELLED: 'cancelled',
+      CHANGES_REQUESTED: 'returned for changes',
     }
     createNotification(
       document.uploadedById,
       'STATUS_CHANGE',
-      `Document ${labels[action]}: ${document.title}`,
-      `"${document.title}" has been ${labels[action]}.`,
+      `Document ${labels[action] ?? action}: ${document.title}`,
+      `"${document.title}" has been ${labels[action] ?? action}.`,
       id,
     )
+    // Also notify originator if different from uploader
+    if (document.originatorUser && document.originatorUser.id !== document.uploadedById) {
+      createNotification(
+        document.originatorUser.id,
+        'STATUS_CHANGE',
+        `Document ${labels[action] ?? action}: ${document.title}`,
+        `"${document.title}" has been ${labels[action] ?? action}.`,
+        id,
+      )
+    }
   }
+
+  // Email uploader + originator for terminal status changes
+  const EMAIL_CONTROL_STATUSES = new Set(['CONTROLLED', 'SUPERSEDED', 'CANCELLED'])
+  if (EMAIL_CONTROL_STATUSES.has(action)) {
+    const appUrl = process.env.APP_URL || 'http://localhost:3000'
+    const documentUrl = `${appUrl}/documents/${id}`
+    const controlRecipients = new Map<string, { name: string; email: string }>()
+    controlRecipients.set(document.uploadedBy.id, { name: document.uploadedBy.name, email: document.uploadedBy.email })
+    if (document.originatorUser && document.originatorUser.id !== document.uploadedBy.id) {
+      controlRecipients.set(document.originatorUser.id, { name: document.originatorUser.name, email: document.originatorUser.email })
+    }
+    controlRecipients.delete(session.userId)
+    for (const r of controlRecipients.values()) {
+      sendStatusChangeEmail({
+        toEmail: r.email,
+        toName: r.name,
+        documentTitle: document.title,
+        documentUrl,
+        newStatus: action,
+      }).catch((e) => console.error('[control] email error:', e))
+    }
+  }
+
+  emitDocStatusChange(id, document.title, action)
 
   const updated = await prisma.document.findUnique({ where: { id }, include: docInclude })
   return NextResponse.json(updated)
